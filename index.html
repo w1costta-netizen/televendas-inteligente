@@ -993,12 +993,17 @@ function openImport(){
       Na primeira vez ele pede um <b>token</b> do GitHub (fica salvo só neste navegador). Para criar: GitHub → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token → Repository access: <i>Only select repositories</i> → <b>${REPO.repo}</b> → Permissions → Repository permissions → <b>Contents: Read and write</b> → Generate. Copie o token (começa com <code>github_pat_</code>).
       <div style="margin-top:8px"><button class="btn sm" id="btnTok">Trocar / remover token salvo</button> ${(()=>{try{return localStorage.getItem('tv_gh')?'<span class="tag promo">token salvo</span>':'<span class="tag warn">sem token</span>';}catch(e){return ''}})()}</div>
     </div></details>
-    ${window.LOCAL_DATA?`<div class="note" style="margin-top:14px">Este dispositivo está usando dados importados localmente (${window.LOCAL_DATA.meta.gerado}). <button class="btn sm" id="btnDiscard">Voltar aos dados publicados</button></div>`:''}`;
+    ${window.LOCAL_DATA?`<div class="note" style="margin-top:14px"><b>Este dispositivo está usando dados importados aqui</b> (${window.LOCAL_DATA.meta.gerado}). Outras pessoas ainda não veem esses dados pelo link.<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary sm" id="btnPubLocal">Publicar estes dados para todos</button><button class="btn sm" id="btnDiscard">Voltar aos dados publicados</button></div><div id="pubLocalMsg" class="small" style="margin-top:6px"></div></div>`:''}`;
   const dz=$('#dz'), fi=$('#fileIn'); dz.onclick=()=>fi.click();
   dz.ondragover=e=>{e.preventDefault(); dz.style.borderColor='var(--accent)';}; dz.ondragleave=()=>dz.style.borderColor='var(--border-2)';
   dz.ondrop=e=>{e.preventDefault(); dz.style.borderColor='var(--border-2)'; handleFiles([...e.dataTransfer.files]);}; fi.onchange=()=>handleFiles([...fi.files]);
   $('#btnTok').onclick=()=>{ const t=prompt('Cole o token do GitHub (deixe vazio para remover):'); try{ if(t) localStorage.setItem('tv_gh',t.trim()); else localStorage.removeItem('tv_gh'); }catch(e){} openImport(); };
   const bd=$('#btnDiscard'); if(bd) bd.onclick=async()=>{ await idbDel('local'); location.reload(); };
+  const bp=$('#btnPubLocal'); if(bp) bp.onclick=async()=>{ const msg=$('#pubLocalMsg'); let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
+    if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" abaixo):'); if(!tok) return; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
+    bp.disabled=true; msg.textContent='Criptografando e publicando…';
+    try{ const blob=await encryptJson(window.LOCAL_DATA,PW_CUR); await publishToGitHub(blob,tok); msg.innerHTML='<b style="color:var(--good)">Publicado!</b> Quem abrir o link verá estes dados em 1–2 minutos.'; }
+    catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; bp.disabled=false; } };
   $('#drawer').classList.add('open'); $('#overlay').classList.add('show');
 }
 let IMPORTED=null;
