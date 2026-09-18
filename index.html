@@ -386,7 +386,7 @@ function buildClients(){
     const prox = lastOk ? new Date(new Date(lastOk).getTime()+freqUse*86400000) : null;
     const atraso = prox ? days(REF,prox) : null;
     // score
-    let score = Math.min(1, diasSem/(freqUse*2))*50;
+    let score = Math.min(1, diasSem/(freqUse*2))*60;
     score += (tot? (canc+rej)/tot : 0)*30;
     if(!ok.length) score += 20;
     score = Math.round(Math.min(100,score));
@@ -546,7 +546,8 @@ function openClient(id){
 }
 function buildScript(c, promo, low){
   const first = c.nome.split(' ')[0];
-  let s = `Olá, ${first}! Aqui é do Televendas do Sam's Club Águas Claras.\n`;
+  const clubeNome = (D.meta.clube_nome||'').replace(/^\d+\s*-\s*/,'').replace(/^SAMS CLUB\s*/i,'').replace(/^Todos os clubes.*$/,'').trim();
+  let s = `Olá, ${first}! Aqui é do Televendas do Sam's Club${clubeNome?' '+clubeNome.charAt(0)+clubeNome.slice(1).toLowerCase():''}.\n`;
   if(c.diasSem>=14 && c.lastOk) s += `Vi que a última compra de vocês foi em ${fmtD(c.lastOk)} (${c.diasSem} dias) — normalmente vocês repõem a cada ${c.freq?c.freq.toFixed(0):'~14'} dias. Posso já deixar o pedido pronto?\n`;
   else if(!c.nOk) s += `Vi que o pedido de ${fmtD(c.last)} não foi concluído (${c.ords[c.ords.length-1].status.toLowerCase()}). Quero resolver isso para vocês: ${c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)? 'o motivo foi "'+c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)+'"' : 'consigo refazer com o preço vigente'}.\n`;
   else s += `Estou ligando para adiantar a reposição de vocês.\n`;
