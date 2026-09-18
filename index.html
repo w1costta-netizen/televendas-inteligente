@@ -167,6 +167,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 <header class="top">
   <div class="top-inner">
     <div class="brand"><div class="logo">TV</div><div><h1>Televendas Inteligente</h1><small id="clube"></small></div></div>
+    <label class="small muted" style="display:flex;align-items:center;gap:6px">Clube <select id="clubeSel" class="btn sm" style="font-weight:600"></select></label>
     <div class="meta-badges" id="metaBadges"></div>
     <button class="btn sm" id="themeBtn" title="Alternar tema">◐ Tema</button>
   </div>
@@ -655,8 +656,8 @@ $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ 
 $('#themeBtn').onclick=()=>{const r=document.documentElement; const dark=matchMedia('(prefers-color-scheme:dark)').matches; const cur=r.dataset.theme||(dark?'dark':'light'); r.dataset.theme=cur==='dark'?'light':'dark';};
 
 /* ---------------------------------- init ---------------------------------- */
-$('#clube').textContent=D.meta.clube;
-$('#metaBadges').innerHTML=`<span class="badge info"><span class="dot"></span>Pedidos: ${fmtD(D.meta.pedidos_periodo[0])} – ${fmtD(D.meta.pedidos_periodo[1])}</span><span class="badge"><span class="dot"></span>Estoque e ofertas: ${fmtD(D.meta.extracao_estoque)}</span><span class="badge warn" title="O relatório de pedidos é de set/2025 e os de estoque/ofertas de set/2026. Na plataforma final as três fontes serão atualizadas juntas."><span class="dot"></span>Bases com 1 ano de defasagem</span>`;
+$('#clube').textContent=D.meta.clube_nome;
+$('#metaBadges').innerHTML=`<span class="badge info"><span class="dot"></span>Pedidos: ${fmtD(D.meta.pedidos_periodo[0])} – ${fmtD(D.meta.pedidos_periodo[1])}</span><span class="badge"><span class="dot"></span>Estoque e ofertas: ${fmtD(D.meta.extracao_estoque)}</span>${Math.abs(days(D.meta.extracao_estoque,D.meta.pedidos_periodo[1]))>45?`<span class="badge warn" title="Pedidos e estoque/ofertas foram extraídos em datas distantes. Na plataforma final as três fontes serão atualizadas juntas."><span class="dot"></span>Bases com datas defasadas</span>`:''}${D.meta.gerado?`<span class="badge"><span class="dot"></span>Carga: ${D.meta.gerado}</span>`:''}`;
 renderGeral(); renderIntel(); // intel popula badges
 go('geral');
 }
@@ -669,12 +670,36 @@ async function unlock(pw){
   const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
   const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(j.salt),iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']);
   let pt; try{ pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(j.iv)},key,b64(j.ct)); }catch(e){ throw new Error('Senha incorreta.'); }
-  window.DATA=JSON.parse(dec.decode(pt));
+  window.FULL=JSON.parse(dec.decode(pt)); window.DATA=applyClub(window.FULL, getClub());
+}
+function getClub(){ try{ return localStorage.getItem('tv_clube')||'all'; }catch(e){ return 'all'; } }
+function applyClub(F, cod){
+  const clubes = F.meta.clubes || [{cod:'', nome:F.meta.clube||''}];
+  if(cod!=='all' && !clubes.some(c=>c.cod===cod)) cod='all';
+  const all = cod==='all';
+  const D = {meta:{...F.meta}};
+  D.meta.clube_nome = all ? (clubes.length>1 ? `Todos os clubes (${clubes.length})` : clubes[0].nome) : (clubes.find(c=>c.cod===cod)?.nome||cod);
+  const inClub = x => all || x.clube===cod || x.clube==null;
+  D.orders = F.orders.filter(inClub);
+  if(all && clubes.length>1){
+    // consolidado por EAN: soma de estoque; preço/margem do primeiro clube
+    const m=new Map(); for(const s of F.stock){ const r=m.get(s.ean); if(r){ r.estoque+=s.estoque; r.total+=s.total; r.pc+=s.pc; } else m.set(s.ean,{...s}); } D.stock=[...m.values()];
+    const pm=new Map(); for(const p of F.promos){ const k=p.cod+'|'+p.ean; const r=pm.get(k); if(r){ if(p.estoque!=null) r.estoque=(r.estoque||0)+p.estoque; } else pm.set(k,{...p}); } D.promos=[...pm.values()];
+    const sm=new Map(); for(const s of F.sections){ const r=sm.get(s.secao); if(r){ r.skus+=s.skus; r.com_estq+=s.com_estq; r.valor+=s.valor; r.custo+=s.custo; r.neg+=s.neg; } else sm.set(s.secao,{...s}); } D.sections=[...sm.values()];
+  } else { D.stock=F.stock.filter(inClub); D.promos=F.promos.filter(inClub); D.sections=F.sections.filter(inClub); }
+  if(D.orders.length){ D.meta.ref_pedidos = D.orders.map(o=>o.data.slice(0,10)).sort().at(-1); }
+  return D;
+}
+function fillClubSel(){
+  const F=window.FULL, sel=$('#clubeSel'); const clubes=F.meta.clubes||[]; const cur=getClub();
+  sel.innerHTML = (clubes.length>1?`<option value="all">Todos os clubes</option>`:'') + clubes.map(c=>`<option value="${c.cod}" ${c.cod===cur?'selected':''}>${c.cod} · ${c.nome.replace(/^\d+\s*-\s*/,'')}</option>`).join('');
+  if(clubes.length<=1) sel.parentElement.style.display='none';
+  sel.onchange=()=>{ try{ localStorage.setItem('tv_clube',sel.value); }catch(e){} location.reload(); };
 }
 async function tryLogin(pw,remember){
   const btn=$('#loginBtn'), err=$('#err'); btn.disabled=true; btn.textContent='Abrindo…'; err.textContent='';
   try{ await unlock(pw); try{ if(remember) localStorage.setItem('tv_pw',pw); else localStorage.removeItem('tv_pw'); }catch(e){}
-    $('#login').remove(); startApp(); }
+    $('#login').remove(); fillClubSel(); startApp(); }
   catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='Entrar'; }
 }
 $('#loginForm').onsubmit=e=>{e.preventDefault(); tryLogin($('#pw').value,$('#rem').checked);};
