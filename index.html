@@ -137,6 +137,17 @@ svg text{fill:var(--text-2);font-size:11px}
 .script{white-space:pre-wrap;background:var(--surface-2);border:1px dashed var(--border-2);border-radius:9px;padding:12px;font-size:13px;line-height:1.5}
 .tag{display:inline-block;padding:2px 7px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:11px;font-weight:700;margin-right:4px}
 .tag.promo{background:var(--good-bg);color:var(--good)} .tag.low{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
+.tarefa{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:8px}
+.tarefa.feita{opacity:.55;background:var(--surface-2)}
+.tarefa .tnum{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800}
+.tarefa.feita .tnum{background:var(--good)}
+.tarefa .tnome{font-size:15px;font-weight:700;margin-bottom:2px}
+.tarefa .tacoes{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:170px}
+.tarefa .ttel{font-size:16px;font-weight:700;text-align:center;font-variant-numeric:tabular-nums}
+.tarefa .tacoes .btn{text-align:center;text-decoration:none}
+@media(max-width:820px){.tarefa{grid-template-columns:32px 1fr}.tarefa .tacoes{grid-column:1/-1;flex-direction:row;flex-wrap:wrap}}
+.prog{height:8px;background:var(--grid);border-radius:4px;overflow:hidden;margin:8px 0 2px}
+.prog div{height:100%;background:var(--good)}
 .heat{display:grid;grid-template-columns:auto repeat(15,1fr);gap:3px;font-size:11px;align-items:center}
 .heat .c{aspect-ratio:1.4;border-radius:3px;background:var(--s1);display:grid;place-items:center;color:#fff;font-weight:600}
 .heat .h{color:var(--text-3);text-align:center}
@@ -229,9 +240,21 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 <section class="view" id="v-tarefas">
   <h2>Tarefas do vendedor</h2>
   <p class="sub">Cada vendedor recebe uma lista curta de sócios para ligar. Toda tentativa é registrada — com ou sem sucesso — e o sócio só sai da fila quando é contatado. Depois de 3 tentativas sem resposta, ele vai para a lista de visita presencial.</p>
-  <div class="grid kpis" id="kpisFila"></div>
+  <div class="card" style="margin-top:4px;border:2px solid var(--accent)">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h3 style="margin:0">Minha lista de hoje</h3>
+      <label class="small muted" style="display:flex;align-items:center;gap:6px">Sou <select id="vEuSou2" class="btn sm"></select></label>
+      <button class="btn sm" id="fMais" style="margin-left:auto">Puxar mais sócios</button>
+    </div>
+    <div class="prog"><div id="progBar" style="width:0%"></div></div>
+    <p class="small muted" id="progTxt" style="margin:0 0 12px"></p>
+    <div id="minhaLista"></div>
+  </div>
 
-  <div class="card" style="margin-top:14px">
+  <div class="grid kpis" style="margin-top:14px" id="kpisFila"></div>
+
+  <details class="card" style="margin-top:14px"><summary style="font-weight:700">Configuração do líder — vendedores, distribuição e envio por e-mail</summary>
+    <div style="margin-top:12px">
     <h3>Vendedores e distribuição</h3>
     <div class="filters">
       <label>Nome do vendedor<input id="vNome" placeholder="ex.: Marcos"></label>
@@ -253,9 +276,9 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
       <button class="btn" id="fLimpar" style="align-self:flex-end">Limpar concluídos</button>
     </div>
     <p class="small muted" style="margin:10px 0 0">Prioriza quem já teve tentativa anterior e, em seguida, o maior potencial (faturamento do ano anterior). Quem foi contatado nos últimos 30 dias não volta para a fila.</p>
-  </div>
-
-  <div id="filaVend" style="margin-top:14px"></div>
+    <div id="filaVend" style="margin-top:14px"></div>
+    </div>
+  </details>
 
   <div class="card" style="margin-top:14px">
     <h3>Histórico de tentativas registradas <button class="btn sm" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button></h3>
@@ -1184,8 +1207,103 @@ function baixaEml(para, assunto, html){
   a.download = 'lista-'+assunto.replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.eml'; a.click();
 }
 
+/* lista de trabalho do vendedor — cartões prontos para ligar */
+const telLimpo = t => String(t||'').replace(/\D/g,'');
+const telWa = t => { const d=telLimpo(t); return d? (d.length<=11? '55'+d : d) : ''; };
+window.__aplicaContatos = async function(lista){
+  const porNum=new Map(), porNome=new Map();
+  const norm = s => String(s??'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+  for(const c of CLI){ porNome.set(norm(c.nome), c.id); if(c.num) porNum.set(String(c.num), c.id); }
+  let ok=0, nao=[];
+  for(const x of lista){
+    const id = (x.num && porNum.get(String(x.num))) || porNome.get(norm(x.nome)) || null;
+    if(!id){ if(x.nome) nao.push(x.nome); continue; }
+    CADASTRO[id] = {...(CADASTRO[id]||{}),
+      telefone: x.tel || CADASTRO[id]?.telefone || '',
+      endereco: x.end || CADASTRO[id]?.endereco || '',
+      segmento: x.atv || CADASTRO[id]?.segmento || '',
+      contatoNome: x.resp || CADASTRO[id]?.contatoNome || '',
+      atualizadoEm: new Date().toISOString(), por:'importação'};
+    ok++;
+  }
+  await salvaCadastro();
+  return {ok, nao};
+};
+async function salvaTelefone(ckey, tel){
+  CADASTRO[ckey] = {...(CADASTRO[ckey]||{}), telefone:tel.trim(), atualizadoEm:new Date().toISOString(), por:vendedorNome()};
+  await salvaCadastro(); renderFila();
+}
+async function autoFila(){
+  const meu = vendedorNome(); if(!meu) return;
+  const cfg = window.__filaCfg || {criterio:'ano', qtd:5};
+  const pend = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu && !['contatado','visita'].includes(situacao(k).st));
+  if(pend.length >= cfg.qtd) return;
+  const naFila = new Set(Object.keys(FILA));
+  const faltam = cfg.qtd - pend.length;
+  const hoje = new Date().toISOString().slice(0,10);
+  let n = 0;
+  for(const x of candidatos(cfg.criterio)){
+    if(n >= faltam) break;
+    if(naFila.has(x.c.id)) continue;
+    FILA[x.c.id] = {vendedor:meu, desde:hoje, rodada:1, criterio:cfg.criterio};
+    n++;
+  }
+  if(n) await salvaFila();
+}
+function cardTarefa(c, s, i){
+  const cad = CADASTRO[c.id] || {};
+  const tel = cad.telefone || '';
+  const promo = c.itens.filter(x=>x.promo).slice(0,2);
+  const compra = c.itens.filter(x=>x.n).slice(0,3).map(x=>x.desc).join(', ') || '—';
+  const feito = s.st==='contatado' || s.st==='visita';
+  return `<div class="tarefa ${feito?'feita':''}" data-card="${esc(c.id)}">
+    <div class="tnum">${feito?'✓':i}</div>
+    <div class="tinfo">
+      <div class="tnome">${esc(c.nome)} ${cad.segmento?`<span class="tag">${esc(cad.segmento)}</span>`:''} ${ST_LABEL[s.st]}</div>
+      <div class="small muted">nº ${esc(c.num)} · última compra ${c.lastOk?fmtD(c.lastOk):'nunca'} (${c.diasSem} dias) · potencial ${fmtR(c.fatLYall||c.fat)}${s.tentativas?` · <b style="color:var(--warn)">${s.tentativas}/${MAX_TENTATIVAS} tentativas</b>`:''}</div>
+      <div class="small" style="margin-top:4px"><b>Compra:</b> ${esc(compra)}</div>
+      ${promo.length?`<div class="small" style="margin-top:2px;color:var(--good)"><b>Oferta:</b> ${promo.map(p=>`${esc(p.desc)} por ${fmtR2(p.promoPreco)} até ${fmtD(p.promo.fim)}`).join(' · ')}</div>`:''}
+      ${cad.contatoNome?`<div class="small muted" style="margin-top:2px">Falar com: ${esc(cad.contatoNome)}</div>`:''}
+      ${s.ult&&s.ult.obs?`<div class="small muted" style="margin-top:4px;padding:6px 8px;background:var(--surface-2);border-radius:6px">Último registro (${fmtDT(s.ult.quando)}): ${esc(s.ult.obs)}</div>`:''}
+    </div>
+    <div class="tacoes">
+      ${tel
+        ? `<div class="ttel">${esc(tel)}</div>
+           <a class="btn sm" href="tel:${telLimpo(tel)}">☎ Ligar</a>
+           <a class="btn sm" href="https://wa.me/${telWa(tel)}" target="_blank" rel="noopener">WhatsApp</a>`
+        : `<div class="small muted">sem telefone</div>
+           <input class="btn sm" data-tel="${esc(c.id)}" placeholder="(81) 9…" style="width:140px">
+           <button class="btn sm" data-telok="${esc(c.id)}">Salvar telefone</button>`}
+      <button class="btn primary sm" data-tent="${esc(c.id)}">Registrar contato</button>
+    </div>
+  </div>`;
+}
+
 /* ---- render ---- */
-function renderFila(){
+async function renderFila(){
+  await autoFila();
+  // ---- minha lista (cartões) ----
+  const meu = vendedorNome();
+  const sel2 = $('#vEuSou2');
+  sel2.innerHTML = '<option value="">— selecione seu nome —</option>' + VENDEDORES.map(v=>`<option ${v.nome===meu?'selected':''}>${esc(v.nome)}</option>`).join('') + (meu&&!VENDEDORES.some(v=>v.nome===meu)?`<option selected>${esc(meu)}</option>`:'');
+  sel2.onchange = async ()=>{ try{ localStorage.setItem('tv_vend', sel2.value); }catch(e){} await renderFila(); };
+  const meus = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu).map(([k])=>CLI.find(c=>c.id===k)).filter(Boolean)
+    .map(c=>({c, s:situacao(c.id)})).sort((a,b)=>{
+      const fa=['contatado','visita'].includes(a.s.st)?1:0, fb=['contatado','visita'].includes(b.s.st)?1:0;
+      return fa-fb || (b.c.fatLYall||b.c.fat)-(a.c.fatLYall||a.c.fat); });
+  const feitos = meus.filter(x=>['contatado','visita'].includes(x.s.st)).length;
+  $('#progBar').style.width = meus.length? (feitos/meus.length*100)+'%' : '0%';
+  $('#progTxt').innerHTML = !meu ? 'Escolha seu nome acima para carregar sua lista.'
+    : meus.length ? `<b>${feitos} de ${meus.length}</b> concluídos hoje · ligue na ordem, de cima para baixo. Registre também quando não conseguir falar.`
+    : 'Nenhum sócio pendente no momento. Use “Puxar mais sócios” para carregar a próxima leva.';
+  $('#minhaLista').innerHTML = meus.length ? meus.map((x,i)=>cardTarefa(x.c, x.s, i+1)).join('')
+    : (meu? '<div class="empty">Sem sócios na sua lista. Clique em “Puxar mais sócios”.</div>' : '');
+  $('#minhaLista').querySelectorAll('[data-tent]').forEach(b=>b.onclick=()=>openTentativa(CLI.find(c=>c.id===b.dataset.tent)));
+  $('#minhaLista').querySelectorAll('[data-telok]').forEach(b=>b.onclick=()=>{ const inp=$('#minhaLista').querySelector(`[data-tel="${CSS.escape(b.dataset.telok)}"]`); if(inp&&inp.value.trim()) salvaTelefone(b.dataset.telok, inp.value); });
+  $('#minhaLista').querySelectorAll('[data-tel]').forEach(inp=>inp.onkeydown=e=>{ if(e.key==='Enter'&&inp.value.trim()) salvaTelefone(inp.dataset.tel, inp.value); });
+  renderFilaResto();
+}
+function renderFilaResto(){
   // config de vendedores
   $('#vendList').innerHTML = VENDEDORES.length
     ? VENDEDORES.map((v,i)=>`<span class="badge" style="gap:8px">${esc(v.nome)}${v.email?` · <span class="muted">${esc(v.email)}</span>`:''} <a href="#" data-delv="${i}" style="color:var(--bad);text-decoration:none">✕</a></span>`).join('')
@@ -1353,6 +1471,11 @@ $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ 
 ['#ySit','#ySearch'].forEach(s=>$(s).addEventListener('input',renderYoyCli)); $('#yiSit').addEventListener('input',renderYoyIt);
 $('#vAdd').onclick=async()=>{ const n=$('#vNome').value.trim(); if(!n) return; VENDEDORES.push({nome:n, email:$('#vEmail').value.trim()}); await salvaVendedores(); $('#vNome').value=''; $('#vEmail').value=''; renderFila(); };
 $('#fGerar').onclick=()=>gerarFila($('#fCrit').value, +$('#fQtd').value||5);
+$('#fMais').onclick=async()=>{ window.__filaCfg={criterio:$('#fCrit').value||'ano', qtd:(+$('#fQtd').value||5)}; await idbSet('filaCfg', window.__filaCfg);
+  const meu=vendedorNome(); if(!meu){ alert('Escolha seu nome em “Sou” antes de puxar a lista.'); return; }
+  const cfg=window.__filaCfg, naFila=new Set(Object.keys(FILA)), hoje=new Date().toISOString().slice(0,10); let n=0;
+  for(const x of candidatos(cfg.criterio)){ if(n>=cfg.qtd) break; if(naFila.has(x.c.id)) continue; FILA[x.c.id]={vendedor:meu,desde:hoje,rodada:1,criterio:cfg.criterio}; n++; }
+  await salvaFila(); await renderFila(); };
 $('#fLimpar').onclick=limparConcluidos;
 $('#btnExpCad').onclick=exportaCadastro;
 ['#eSearch','#eAlert'].forEach(s=>$(s).addEventListener('input',renderProd));
@@ -1381,6 +1504,7 @@ async function unlock(pw){
   window.__fila = (await idbGet('fila')) || {};
   window.__cadastro = (await idbGet('cadastro')) || {};
   window.__vendedores = (await idbGet('vendedores')) || [];
+  window.__filaCfg = (await idbGet('filaCfg')) || {criterio:'ano', qtd:5};
 }
 function getClub(){ try{ return localStorage.getItem('tv_clube')||'all'; }catch(e){ return 'all'; } }
 function applyClub(F, cod){
@@ -1475,6 +1599,23 @@ async function rawBigCells(file, colLetter){ // lê o XML da planilha para prese
 async function readWorkbook(file){ await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'); const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true}); const ws=wb.Sheets[wb.SheetNames[0]]; return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null}); }
 function median(a){ if(!a.length) return null; const s=[...a].sort((x,y)=>x-y); const h=s.length>>1; return s.length%2? s[h] : (s[h-1]+s[h])/2; }
 
+function parseContatosRows(rows){
+  const head = rows[0].map(x=>String(x??'').toLowerCase());
+  const col = (...nomes)=>head.findIndex(c=>nomes.some(n=>c.includes(n)));
+  const iNome=col('nome','sócio','socio','razão','razao','cliente'), iTel=col('telefone','celular','fone','whats','contato'),
+        iNum=col('nº','n°','numero','número','código','codigo','matrícula','matricula'), iEnd=col('endereço','endereco','logradouro','rua'),
+        iAtv=col('atividade','segmento','ramo','tipo'), iResp=col('responsável','responsavel','comprador','falar');
+  if(iNome<0 && iNum<0) return [];
+  const out=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r) continue;
+    const nome = iNome>=0? String(r[iNome]??'').trim() : '';
+    const num  = iNum>=0?  String(r[iNum]??'').split('.')[0].trim() : '';
+    if(!nome && !num) continue;
+    out.push({nome, num, tel: iTel>=0? String(r[iTel]??'').trim():'', end: iEnd>=0? String(r[iEnd]??'').trim():'',
+              atv: iAtv>=0? String(r[iAtv]??'').trim():'', resp: iResp>=0? String(r[iResp]??'').trim():''});
+  }
+  return out;
+}
 async function importFiles(files, base){
   const log=[]; let orders=[], promos=[], stockRows=[];
   for(const f of files){ const n=f.name.toLowerCase(); if(!n.endsWith('.xlsx')){ log.push(`ignorado ${f.name}`); continue; }
@@ -1482,6 +1623,7 @@ async function importFiles(files, base){
       if(n.includes('pedido')){ const head=rows[0].map(x=>String(x??'')); let o; if(head.includes('Operador')||head.includes('EAN')){ const raw=await rawBigCells(f,'D'); o=parsePedidosFlat(rows,raw); } else o=parsePedidosNested(rows); orders.push(...o); log.push(`pedidos · ${f.name}: ${o.length} pedidos`); }
       else if(n.includes('promoc')){ const p=parsePromosRows(rows); promos.push(...p); log.push(`ofertas · ${f.name}: ${p.length} ofertas`); }
       else if(n.includes('estoque')){ const e=parseEstoqueRows(rows); e.forEach(x=>x._t=f.lastModified||0); stockRows.push(...e); log.push(`estoque · ${f.name}: ${e.length} SKUs`); }
+      else if(n.includes('contato')||n.includes('cadastro')||n.includes('telefone')||n.includes('socios')||n.includes('sócios')){ const cs=parseContatosRows(rows); const r= window.__aplicaContatos ? await window.__aplicaContatos(cs) : {ok:0,nao:[]}; log.push(`contatos · ${f.name}: ${cs.length} linhas · ${r.ok} sócios atualizados${r.nao.length?` · ${r.nao.length} sem correspondência`:''}`); }
       else log.push(`ignorado (nome não reconhecido) ${f.name}`);
     }catch(e){ log.push(`ERRO em ${f.name}: ${e.message}`); }
   }
@@ -1551,7 +1693,7 @@ function openImport(){
   $('#dhead').innerHTML=`<h2>Importar arquivos da plataforma</h2><div class="small muted">Pedidos, Promoções e Estoque (.xlsx) · de quantos clubes e meses quiser · os arquivos são lidos apenas no seu navegador</div>`;
   $('#dbody').innerHTML=`
     <div id="dz" style="border:2px dashed var(--border-2);border-radius:12px;padding:28px;text-align:center;cursor:pointer;background:var(--surface-2)">
-      <div style="font-size:28px">⬆</div><b>Arraste os arquivos aqui</b> ou clique para escolher<div class="small muted" style="margin-top:6px">Pedidos-… · Novo-Pedidos-… · Promocoes-… · Relatorio-Estoque-…</div>
+      <div style="font-size:28px">⬆</div><b>Arraste os arquivos aqui</b> ou clique para escolher<div class="small muted" style="margin-top:6px">Pedidos-… · Novo-Pedidos-… · Promocoes-… · Relatorio-Estoque-…<br><b>Contatos-…</b> (planilha com nome/nº do sócio, telefone, endereço e atividade)</div>
       <input type="file" id="fileIn" multiple accept=".xlsx" style="display:none"></div>
     <div class="filters" style="margin-top:12px"><label class="chk"><input type="radio" name="modo" value="add" checked> Adicionar aos dados atuais (recomendado)</label><label class="chk"><input type="radio" name="modo" value="replace"> Substituir tudo</label></div>
     <div id="impLog" class="script" style="display:none;max-height:180px;overflow:auto"></div>
