@@ -137,6 +137,8 @@ svg text{fill:var(--text-2);font-size:11px}
 .script{white-space:pre-wrap;background:var(--surface-2);border:1px dashed var(--border-2);border-radius:9px;padding:12px;font-size:13px;line-height:1.5}
 .tag{display:inline-block;padding:2px 7px;border-radius:6px;background:var(--info-bg);color:var(--info);font-size:11px;font-weight:700;margin-right:4px}
 .tag.promo{background:var(--good-bg);color:var(--good)} .tag.low{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
+body.modo-vendedor #kpisFila, body.modo-vendedor #tVisita, body.modo-vendedor .so-gerente{display:none!important}
+body.modo-vendedor nav.tabs button[data-v="geral"],body.modo-vendedor nav.tabs button[data-v="yoy"],body.modo-vendedor nav.tabs button[data-v="estoque"],body.modo-vendedor nav.tabs button[data-v="intel"],body.modo-vendedor nav.tabs button[data-v="result"],body.modo-vendedor nav.tabs button[data-v="equipe"]{display:none!important}
 .tarefa{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:8px}
 .tarefa.feita{opacity:.55;background:var(--surface-2)}
 .tarefa .tnum{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800}
@@ -281,7 +283,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 
   <div class="grid kpis" style="margin-top:14px" id="kpisFila"></div>
 
-  <details class="card" style="margin-top:14px"><summary style="font-weight:700">Configuração do líder — vendedores, distribuição e envio por e-mail</summary>
+  <details class="card so-gerente" style="margin-top:14px"><summary style="font-weight:700">Configuração do líder — vendedores, distribuição e envio por e-mail</summary>
     <div style="margin-top:12px">
     <h3>Vendedores e distribuição</h3>
     <div class="filters">
@@ -308,13 +310,13 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     </div>
   </details>
 
-  <div class="card" style="margin-top:14px">
+  <div class="card so-gerente" style="margin-top:14px">
     <h3>Histórico de tentativas registradas <button class="btn sm" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button></h3>
     <p class="small muted" style="margin:0 0 10px">Tudo o que a equipe registrou: quem ligou, se conseguiu falar, o motivo e se o sócio comprou depois.</p>
     <div class="tbl-wrap" style="max-height:340px"><table id="tAcoes"></table></div>
   </div>
 
-  <div class="grid row11" style="margin-top:14px">
+  <div class="grid row11 so-gerente" style="margin-top:14px">
     <div class="card"><h3>Sem contato após 3 tentativas — avaliar visita presencial</h3>
       <p class="small muted" style="margin:0 0 8px">Levar ao líder para checar o endereço cadastrado e programar visita ou atualização de telefone.</p>
       <div class="tbl-wrap" style="max-height:360px"><table id="tVisita"></table></div></div>
@@ -628,8 +630,8 @@ function renderCarteira(){
   const q=$('#cSearch').value.toLowerCase(), dmin=+$('#cDias').value, sit=$('#cSit').value, rk=$('#cRisco').value;
   let rows = CLI.filter(c=> (!q || c.nome.toLowerCase().includes(q) || String(c.num).includes(q)) && c.diasSem>=dmin && (!rk||c.risco===rk)
      && (sit===''|| (sit==='ativo'&&c.nOk>0) || (sit==='perdido'&&!c.nOk) || (sit==='atrasado'&&c.atraso!=null&&c.atraso>0) || (sit==='nao'&&c.yoy==='nao')));
-  $('#cCount').textContent = `${rows.length} sócios · ${fmtR(sum(rows,c=>c.fat))} faturados`;
-  table($('#tCart'), [
+  $('#cCount').textContent = ROLE==='vendedor' ? `${rows.length} sócios` : `${rows.length} sócios · ${fmtR(sum(rows,c=>c.fat))} faturados`;
+  const colsCart = [
     {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num}${c.yoy==='nao'?' · <span class="tag low">não voltou em '+ANO+'</span>':c.yoy==='novo'?' · <span class="tag promo">novo</span>':''}</div>`},
     {k:'n',l:'Pedidos',num:true,f:c=>`${c.nOk}<span class="muted">/${c.n}</span>`},
     {k:'fat',l:'Faturado',num:true,f:c=>fmtR(c.fat),sort:true},
@@ -641,7 +643,9 @@ function renderCarteira(){
     {k:'score',l:'Risco',f:riskHtml},
     {k:'itens',l:'Itens',num:true,v:c=>c.itens.length},
     {k:'acao',l:'Contato',num:true,v:c=>situacao(c.id).tentativas,f:c=>{const s=situacao(c.id); return `<button class="btn sm" data-tentcart="${esc(c.id)}">☎ Registrar</button>${s.acs.length?`<div class="small muted">${s.contatos?'falou '+s.contatos+'x':''}${s.tentativas?` · ${s.tentativas}/${MAX_TENTATIVAS} sem contato`:''}</div>`:''}`;}},
-  ], rows, {row:openClient, id:c=>c.id});
+  ];
+  const colsVend = new Set(['fat','perd','score']);
+  table($('#tCart'), ROLE==='vendedor'? colsCart.filter(c=>!colsVend.has(c.k)) : colsCart, rows, {row:openClient, id:c=>c.id});
   $('#tCart').querySelectorAll('[data-tentcart]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTentativa(CLI.find(x=>x.id===b.dataset.tentcart)); });
 }
 function openClient(id){
@@ -651,13 +655,13 @@ function openClient(id){
   const script = buildScript(c, promoItens, lowItens);
   $('#dbody').innerHTML = `
     <div class="grid kpis" style="margin-bottom:14px">
-      ${kpi('Faturado', fmtR(c.fat), `ticket ${fmtR(c.nOk?c.fat/c.nOk:0)}`)}${kpi('Perdido', fmtR(c.canc+c.rej), `${fmtR(c.canc)} canc. · ${fmtR(c.rej)} rej.`)}
+      ${ROLE==='gerente'? kpi('Faturado', fmtR(c.fat), `ticket ${fmtR(c.nOk?c.fat/c.nOk:0)}`)+kpi('Perdido', fmtR(c.canc+c.rej), `${fmtR(c.canc)} canc. · ${fmtR(c.rej)} rej.`) : ''}
       ${kpi('Última compra', c.lastOk?fmtD(c.lastOk):'—', `${c.diasSem} dias sem comprar`)}${kpi('Frequência', c.freq!=null?c.freq.toFixed(1)+' d':'—', c.prox?`próx. prevista ${fmtD(c.prox)}`:'sem base')}
-      ${HAS_YOY?kpi(`${ANT} (mesmo período)`, fmtR(c.fatLY), `${fmtR(c.fatLYall)} no total carregado de ${ANT}`)+kpi(`${ANO} até agora`, fmtR(c.fatCY), c.yoy==='nao'?'<span style="color:var(--bad)">ainda não comprou este ano</span>':deltaHtml(c.fatCY,c.fatLY)):''}
+      ${HAS_YOY&&ROLE==='gerente'?kpi(`${ANT} (mesmo período)`, fmtR(c.fatLY), `${fmtR(c.fatLYall)} no total carregado de ${ANT}`)+kpi(`${ANO} até agora`, fmtR(c.fatCY), c.yoy==='nao'?'<span style="color:var(--bad)">ainda não comprou este ano</span>':deltaHtml(c.fatCY,c.fatLY)):''}
     </div>
     <h3>Oportunidades para a ligação</h3>
     <div style="margin-bottom:14px">
-      ${promoItens.length? promoItens.map(i=>`<div class="alert good" style="margin-bottom:6px"><div class="ic">%</div><div><b>${esc(i.desc)}</b><span>Em oferta até ${fmtD(i.promo.fim)}: ${fmtR2(i.promoPreco)} na faixa dele (tabela ${fmtR2(i.precoTab)}, último pago ${fmtR2(i.ultPreco)}) · estoque ${fmtN(i.estoque)}</span></div></div>`).join(''):''}
+      ${promoItens.length? promoItens.map(i=>`<div class="alert good" style="margin-bottom:6px"><div class="ic">%</div><div><b>${esc(i.desc)}</b><span>Em oferta até ${fmtD(i.promo.fim)}: ${fmtR2(i.promoPreco)} na faixa dele (tabela ${fmtR2(i.precoTab)}${ROLE==='gerente'?`, último pago ${fmtR2(i.ultPreco)}`:''}) · estoque ${fmtN(i.estoque)}</span></div></div>`).join(''):''}
       ${lowItens.length? lowItens.map(i=>`<div class="alert warn" style="margin-bottom:6px"><div class="ic">▢</div><div><b>${esc(i.desc)}</b><span>Item recorrente com estoque zerado — avisar previsão de chegada / oferecer substituto</span></div></div>`).join(''):''}
       ${crossFor(c).slice(0,3).map(x=>`<div class="alert info" style="margin-bottom:6px"><div class="ic">+</div><div><b>${esc(x.desc)}</b><span>Cross-sell: ${x.n} sócios com perfil parecido compram · ${x.promo?'<span class="tag promo">em oferta</span>':''} tabela ${fmtR2(x.preco)}</span></div></div>`).join('')}
       ${!promoItens.length&&!lowItens.length?'<p class="small muted">Nenhuma oferta vigente nos itens deste sócio. Ver cross-sell acima ou ofertas da seção.</p>':''}
@@ -669,16 +673,17 @@ function openClient(id){
     <h3 style="margin-top:18px">O que este sócio compra</h3>
     <div class="tbl-wrap" style="max-height:320px"><table id="tCliItens"></table></div>
     <h3 style="margin-top:18px">Últimos pedidos</h3>
-    ${c.ords.slice().reverse().slice(0,12).map(o=>`<details style="margin-bottom:6px"><summary>${fmtDT(o.data)} · pedido ${o.pedido} · <span class="pill ${pillCls(o.status)}">${o.status}</span> · <b>${fmtR2(o.valor)}</b> · ${o.itens.length} item(ns)</summary>
-      <table style="margin:6px 0 10px">${o.itens.map(i=>`<tr><td>${esc(i.desc)}</td><td class="num">${fmtN(i.qtd)} un</td><td class="num">${fmtR2(i.preco)}</td><td class="small muted">${esc(i.aprov||'')}${i.motivo?' · <span style="color:var(--bad)">'+esc(i.motivo)+'</span>':''}</td></tr>`).join('')}</table></details>`).join('')}
+    ${c.ords.slice().reverse().slice(0,12).map(o=>`<details style="margin-bottom:6px"><summary>${fmtDT(o.data)} · pedido ${o.pedido} · <span class="pill ${pillCls(o.status)}">${o.status}</span> ${ROLE==='gerente'?` · <b>${fmtR2(o.valor)}</b>`:''} · ${o.itens.length} item(ns)</summary>
+      <table style="margin:6px 0 10px">${o.itens.map(i=>`<tr><td>${esc(i.desc)}</td><td class="num">${fmtN(i.qtd)} un</td>${ROLE==='gerente'?`<td class="num">${fmtR2(i.preco)}</td>`:''}<td class="small muted">${esc(i.aprov||'')}${i.motivo?' · <span style="color:var(--bad)">'+esc(i.motivo)+'</span>':''}</td></tr>`).join('')}</table></details>`).join('')}
   `;
   table($('#tCliItens'), [
     {k:'desc',l:'Produto',f:i=>`${esc(i.desc)}<div class="small muted">${esc(i.secao||'')} · ${i.ean}</div>`},
-    {k:'n',l:'Compras',num:true},{k:'qtd',l:'Qtd total',num:true,f:i=>fmtN(i.qtd)},{k:'valor',l:'Valor',num:true,f:i=>fmtR(i.valor),sort:true},
-    {k:'ultPreco',l:'Últ. preço',num:true,f:i=>fmtR2(i.ultPreco)},{k:'precoTab',l:'Tabela hoje',num:true,f:i=>fmtR2(i.precoTab)},
+    {k:'n',l:'Compras',num:true},{k:'qtd',l:'Qtd total',num:true,f:i=>fmtN(i.qtd),sort:true},
+    ...(ROLE==='gerente'?[{k:'valor',l:'Valor',num:true,f:i=>fmtR(i.valor)},{k:'ultPreco',l:'Últ. preço',num:true,f:i=>fmtR2(i.ultPreco)}]:[]),
+    {k:'precoTab',l:'Tabela hoje',num:true,f:i=>fmtR2(i.precoTab)},
     {k:'promo',l:'Oferta',f:i=>i.promo?`<span class="tag promo">${fmtR2(i.promoPreco)} até ${fmtD(i.promo.fim)}</span>`:'—'},
     {k:'estoque',l:'Estoque',num:true,f:i=>i.estoque==null?'—':i.estoque<=0?`<span class="tag low">${fmtN(i.estoque)}</span>`:fmtN(i.estoque)},
-    {k:'margem',l:'Margem',num:true,f:i=>fmtP(i.margem)},
+    ...(ROLE==='gerente'?[{k:'margem',l:'Margem',num:true,f:i=>fmtP(i.margem)}]:[]),
   ], c.itens);
   $('#copyScript').onclick=()=>{ navigator.clipboard?.writeText(script); $('#copyScript').textContent='Copiado ✓'; };
   const origemSug = c.yoy==='nao'?'nao' : (c.atraso>0?'atraso' : (!c.nOk?'perdido' : (promoItens.length?'oferta':'outro')));
@@ -697,7 +702,11 @@ function buildScript(c, promo, low){
   if(c.diasSem>=14 && c.lastOk) s += `Vi que a última compra de vocês foi em ${fmtD(c.lastOk)} (${c.diasSem} dias) — normalmente vocês repõem a cada ${c.freq?c.freq.toFixed(0):'~14'} dias. Posso já deixar o pedido pronto?\n`;
   else if(!c.nOk) s += `Vi que o pedido de ${fmtD(c.last)} não foi concluído (${c.ords[c.ords.length-1].status.toLowerCase()}). Quero resolver isso para vocês: ${c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)? 'o motivo foi "'+c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)+'"' : 'consigo refazer com o preço vigente'}.\n`;
   else s += `Estou ligando para adiantar a reposição de vocês.\n`;
-  if(c.yoy==='nao') s += `No ano passado vocês compraram ${fmtR(c.fatLYall)} com a gente neste período e este ano ainda não registramos pedido — quero garantir que não falte nada para vocês.\n`;
+  if(c.yoy==='nao') s += ROLE==='gerente'
+    ? `No ano passado vocês compraram ${fmtR(c.fatLYall)} com a gente neste período e este ano ainda não registramos pedido — quero garantir que não falte nada para vocês.
+`
+    : `No ano passado vocês compravam com a gente neste período e este ano ainda não registramos pedido — quero garantir que não falte nada para vocês.
+`;
   if(promo.length) s += `Boas notícias: ${promo.slice(0,3).map(i=>`${i.desc} está por ${fmtR2(i.promoPreco)} até ${fmtD(i.promo.fim)}`).join('; ')}.\n`;
   const top = c.itens.filter(i=>i.n>0).slice(0,3);
   if(top.length) s += `Reposição habitual: ${top.map(i=>`${i.desc} (${fmtN(i.ultQtd)} un)`).join(', ')}.\n`;
@@ -738,7 +747,7 @@ function renderOfertas(){
     {k:'best',l:'Melhor preço',num:true,v:p=>bestTier(p),f:p=>`<b>${fmtR2(bestTier(p))}</b>`},
     {k:'desc_pct',l:'Desc.',num:true,v:p=>p.preco?(1-bestTier(p)/p.preco)*100:null,f:p=>fmtP(p.preco?(1-bestTier(p)/p.preco)*100:null)},
     {k:'estoque',l:'Estoque',num:true,f:p=>p.estoque==null?'—':p.estoque<=0?`<span class="tag low">${fmtN(p.estoque)}</span>`:fmtN(p.estoque)},
-    {k:'margem',l:'Margem tab.',num:true,f:p=>p.margem==null?'—':`<span style="${p.margem<0?'color:var(--bad)':''}">${fmtP(p.margem)}</span>`},
+    ...(ROLE==='gerente'?[{k:'margem',l:'Margem tab.',num:true,f:p=>p.margem==null?'—':`<span style="${p.margem<0?'color:var(--bad)':''}">${fmtP(p.margem)}</span>`}]:[]),
     {k:'fim',l:'Vigência',num:true,f:p=>`${fmtD(p.ini)} – ${fmtD(p.fim)}${isVig(p)&&days(p.fim,HOJE)<=7?`<div><span class="tag warn">termina em ${days(p.fim,HOJE)}d</span></div>`:''}`,sort:true},
     {k:'buyers',l:'Sócios',num:true,v:p=>buyersByEan.get(p.ean)?.size||0,f:p=>{const b=buyersByEan.get(p.ean); return b?`<a href="#" data-buyers="${p.ean}">${b.size}</a>`:'—';}},
   ],rows,{sort:'buyers'});
@@ -1519,7 +1528,7 @@ function candidatos(criterio){
     if(criterio==='90')  return c.diasSem>=90;
     if(criterio==='atraso') return c.atraso!=null && c.atraso>0;
     return c.diasSem>=30;
-  }).map(c=>({c, s:situacao(c.id), pot: c.fatLYall || c.fat || 0}))
+  }).map(c=>({c, s:situacao(c.id), pot: (D.prioridades ? (1e9 - (D.prioridades[c.id]||1e6)) : (c.fatLYall || c.fat || 0))}))
     .sort((a,b)=>{
       const ra = a.s.st==='tentativa'?0:1, rb = b.s.st==='tentativa'?0:1;   // retentativas primeiro
       return ra-rb || b.pot-a.pot;
@@ -1646,7 +1655,7 @@ function cardTarefa(c, s, i){
     <div class="tnum">${feito?'✓':i}</div>
     <div class="tinfo">
       <div class="tnome">${esc(c.nome)} ${cad.segmento?`<span class="tag">${esc(cad.segmento)}</span>`:''} ${ST_LABEL[s.st]}</div>
-      <div class="small muted">nº ${esc(c.num)} · última compra ${c.lastOk?fmtD(c.lastOk):'nunca'} (${c.diasSem} dias) · potencial ${fmtR(c.fatLYall||c.fat)}${s.tentativas?` · <b style="color:var(--warn)">${s.tentativas}/${MAX_TENTATIVAS} tentativas</b>`:''}</div>
+      <div class="small muted">nº ${esc(c.num)} · última compra ${c.lastOk?fmtD(c.lastOk):'nunca'} (${c.diasSem} dias)${ROLE==='gerente'?` · potencial ${fmtR(c.fatLYall||c.fat)}`:''}${s.tentativas?` · <b style="color:var(--warn)">${s.tentativas}/${MAX_TENTATIVAS} tentativas</b>`:''}</div>
       <div class="small" style="margin-top:4px"><b>Compra:</b> ${esc(compra)}</div>
       ${promo.length?`<div class="small" style="margin-top:2px;color:var(--good)"><b>Oferta:</b> ${promo.map(p=>`${esc(p.desc)} por ${fmtR2(p.promoPreco)} até ${fmtD(p.promo.fim)}`).join(' · ')}</div>`:''}
       ${cad.contatoNome?`<div class="small muted" style="margin-top:2px">Falar com: ${esc(cad.contatoNome)}</div>`:''}
@@ -1889,7 +1898,7 @@ $('#themeBtn').onclick=()=>{const r=document.documentElement; const dark=matchMe
 
 /* ---------------------------------- init ---------------------------------- */
 $('#clube').textContent=D.meta.clube_nome;
-$('#metaBadges').innerHTML=`<span class="badge info"><span class="dot"></span>Pedidos: ${fmtD(D.meta.pedidos_periodo[0])} – ${fmtD(D.meta.pedidos_periodo[1])}</span><span class="badge"><span class="dot"></span>Estoque e ofertas: ${fmtD(D.meta.extracao_estoque)}</span>${Math.abs(days(D.meta.extracao_estoque,D.meta.pedidos_periodo[1]))>45?`<span class="badge warn" title="Pedidos e estoque/ofertas foram extraídos em datas distantes. Na plataforma final as três fontes serão atualizadas juntas."><span class="dot"></span>Bases com datas defasadas</span>`:''}${D.meta.gerado?`<span class="badge"><span class="dot"></span>Carga: ${D.meta.gerado}</span>`:''}${window.LOCAL_DATA?`<span class="badge good" title="Dados importados neste dispositivo pela tela Importar"><span class="dot"></span>Dados deste dispositivo</span>`:''}`;
+$('#metaBadges').innerHTML=(ROLE==='vendedor'?`<span class="badge info"><span class="dot"></span>Modo vendedor</span>`:'')+`<span class="badge info"><span class="dot"></span>Pedidos: ${fmtD(D.meta.pedidos_periodo[0])} – ${fmtD(D.meta.pedidos_periodo[1])}</span><span class="badge"><span class="dot"></span>Estoque e ofertas: ${fmtD(D.meta.extracao_estoque)}</span>${Math.abs(days(D.meta.extracao_estoque,D.meta.pedidos_periodo[1]))>45?`<span class="badge warn" title="Pedidos e estoque/ofertas foram extraídos em datas distantes. Na plataforma final as três fontes serão atualizadas juntas."><span class="dot"></span>Bases com datas defasadas</span>`:''}${D.meta.gerado?`<span class="badge"><span class="dot"></span>Carga: ${D.meta.gerado}</span>`:''}${window.LOCAL_DATA?`<span class="badge good" title="Dados importados neste dispositivo pela tela Importar"><span class="dot"></span>Dados deste dispositivo</span>`:''}`;
 FILA = __FILA_INIT; CADASTRO = __CAD_INIT; VENDEDORES = __VEND_INIT;
 if(__PRIV_INIT) PRIV = {...PRIV, ...__PRIV_INIT, consentimentoFoto:{...(__PRIV_INIT.consentimentoFoto||{})}};
 if(window.FULL && window.FULL.equipe && mesclaEquipeRemota(window.FULL.equipe)) salvaVendedores();
@@ -1899,12 +1908,74 @@ renderIntel(); if(HAS_YOY) renderYoy(); renderFila(); renderGeral(); // intel/yo
 go('geral');
 }
 /* ---------------------------------- acesso ---------------------------------- */
+/* ---------------------------------- controle de acesso ---------------------------------- */
+let ROLE = 'gerente';   // 'gerente' = pacote completo · 'vendedor' = pacote restrito
+const ehCelular = () => (navigator.userAgentData && navigator.userAgentData.mobile===true) || /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent);
+const ehAppInstalado = () => (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true;
+const ABAS_VENDEDOR = ['tarefas','ofertas','carteira'];
+
+/* monta o pacote do vendedor: sem valores, margem, custo e consolidações */
+function pacoteRestrito(F){
+  const okS = new Set(['FATURADO','FINALIZADO','DISPONIVEL NO PDV']);
+  // prioridade calculada pelo líder (ranking), para a fila funcionar sem revelar R$
+  const pot = new Map();
+  for(const o of F.orders){ if(okS.has(o.status)) pot.set(o.ckey, (pot.get(o.ckey)||0) + (o.valor||0)); }
+  const ranking = [...pot.entries()].sort((a,b)=>b[1]-a[1]);
+  const prioridades = {}; ranking.forEach(([ck],i)=>prioridades[ck]=i+1);
+  return {
+    meta: {...F.meta, restrito:true},
+    prioridades,
+    orders: F.orders.map(o=>({pedido:o.pedido, clube:o.clube, data:o.data, cliente:o.cliente, ckey:o.ckey, nome:o.nome,
+      status:o.status, operador:o.operador||null, valor:0,
+      itens:(o.itens||[]).map(i=>({ean:i.ean, desc:i.desc, qtd:i.qtd, preco:0, secao:i.secao||null}))})),
+    promos: (F.promos||[]).map(p=>({cod:p.cod, ean:p.ean, desc:p.desc, ini:p.ini, fim:p.fim, tiers:p.tiers, clube:p.clube,
+      preco:p.preco, estoque:p.estoque, secao:p.secao})),          // preço de venda e oferta: o vendedor precisa
+    stock: (F.stock||[]).map(s=>({clube:s.clube, ean:s.ean, desc:s.desc, estoque:s.estoque, preco:s.preco,
+      secao:s.secao, portfolio:s.portfolio, ult:s.ult, total:0, custo:0, margem:null, pc:s.pc, status:s.status})),
+    sections: [],
+    equipe: (F.equipe||[]).map(v=>({nome:v.nome, usuario:v.usuario, cargo:v.cargo, perfil:v.perfil, clube:v.clube, ativo:v.ativo})),
+    cadastroSocios: F.cadastroSocios || {}
+  };
+}
+
+/* esconde da interface o que o vendedor não pode ver */
+function aplicaPerfilUI(){
+  const vend = ROLE==='vendedor';
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
+    b.style.display = (!vend || ABAS_VENDEDOR.includes(b.dataset.v)) ? '' : 'none';
+  });
+  document.querySelectorAll('#impBtn').forEach(b=>b.style.display = vend ? 'none' : '');
+  document.body.classList.toggle('modo-vendedor', vend);
+  if(vend){
+    const ativa = document.querySelector('nav.tabs button.active');
+    if(!ativa || !ABAS_VENDEDOR.includes(ativa.dataset.v)) go('tarefas');
+  }
+}
+
+/* bloqueio de celular para quem não é gerente geral */
+function bloqueiaCelular(){
+  if(!(ehCelular() || ehAppInstalado())) return false;
+  if(ROLE==='gerente') return false;
+  document.body.innerHTML = `<div style="min-height:100vh;display:grid;place-items:center;padding:24px;font:15px/1.5 -apple-system,'Segoe UI',Roboto,sans-serif;background:#f4f4f2;color:#0b0b0b">
+    <div style="max-width:420px;text-align:center">
+      <div style="width:56px;height:56px;border-radius:14px;background:#2a78d6;color:#fff;display:grid;place-items:center;font-weight:800;font-size:22px;margin:0 auto 16px">TV</div>
+      <h2 style="margin:0 0 8px">Acesso pelo celular restrito</h2>
+      <p style="color:#52514e;margin:0 0 16px">Por política de confidencialidade, o aplicativo no celular é de uso exclusivo da gerência geral.</p>
+      <p style="color:#52514e;margin:0">Use o <b>computador</b> para acessar sua lista de contatos do dia.</p>
+    </div></div>`;
+  return true;
+}
+
 const enc=new TextEncoder(), dec=new TextDecoder();
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function unlock(pw){
   let remote=null, netErr=null, badPw=false;
   try{ const r=await fetch('data.enc',{cache:'no-store'}); if(!r.ok) throw new Error('Não foi possível carregar os dados publicados ('+r.status+').'); const j=await r.json();
-       try{ remote=await decryptBlob(j,pw); }catch(e){ badPw=true; } }catch(e){ netErr=e; }
+       try{ remote=await decryptBlob(j,pw); ROLE='gerente'; }catch(e){ badPw=true; } }catch(e){ netErr=e; }
+  if(!remote){
+    try{ const r2=await fetch('data-vend.enc',{cache:'no-store'});
+         if(r2.ok){ const j2=await r2.json(); try{ remote=await decryptBlob(j2,pw); ROLE='vendedor'; badPw=false; }catch(e){} } }catch(e){}
+  }
   let local=null; const lb=await idbGet('local'); if(lb){ try{ local=await decryptBlob(lb,pw); }catch(e){} }
   if(!remote && !local){ if(badPw || lb) throw new Error('Senha incorreta.'); throw netErr||new Error('Sem dados.'); }
   const useLocal = local && (!remote || (local.meta.gerado_ts||0) >= (remote.meta.gerado_ts||0));
@@ -1944,7 +2015,8 @@ function fillClubSel(){
 async function tryLogin(pw,remember){
   const btn=$('#loginBtn'), err=$('#err'); btn.disabled=true; btn.textContent='Abrindo…'; err.textContent='';
   try{ await unlock(pw); try{ if(remember) localStorage.setItem('tv_pw',pw); else localStorage.removeItem('tv_pw'); }catch(e){}
-    $('#login').remove(); fillClubSel(); startApp(); }
+    if(bloqueiaCelular()) return;
+    $('#login').remove(); fillClubSel(); startApp(); aplicaPerfilUI(); }
   catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent='Entrar'; }
 }
 $('#loginForm').onsubmit=e=>{e.preventDefault(); tryLogin($('#pw').value,$('#rem').checked);};
@@ -2094,8 +2166,8 @@ function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('tv',1); 
 async function idbGet(k){ try{ const d=await idb(); return await new Promise((res,rej)=>{ const t=d.transaction('kv').objectStore('kv').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>rej(t.error); }); }catch(e){ return null; } }
 async function idbSet(k,v){ const d=await idb(); return new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').put(v,k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }
 async function idbDel(k){ const d=await idb(); return new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').delete(k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }
-async function publishToGitHub(blob, token){
-  const api=`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/contents/data.enc`; const H={Authorization:'Bearer '+token, Accept:'application/vnd.github+json'};
+async function publishToGitHub(blob, token, arquivo){
+  const api=`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/contents/${arquivo||'data.enc'}`; const H={Authorization:'Bearer '+token, Accept:'application/vnd.github+json'};
   let sha=null; const g=await fetch(api,{headers:H}); if(g.status===401||g.status===403) throw new Error('Token inválido ou sem permissão de escrita no repositório.'); if(g.ok) sha=(await g.json()).sha;
   const content=b64e(enc.encode(JSON.stringify(blob)));
   const r=await fetch(api,{method:'PUT',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message:'Atualização de dados pelo app', content, ...(sha?{sha}:{})})});
@@ -2134,7 +2206,11 @@ function openImport(){
   const bp=$('#btnPubLocal'); if(bp) bp.onclick=async()=>{ const msg=$('#pubLocalMsg'); let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
     if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" abaixo):'); if(!tok) return; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
     bp.disabled=true; msg.textContent='Criptografando e publicando…';
-    try{ const blob=await encryptJson(window.LOCAL_DATA,PW_CUR); await publishToGitHub(blob,tok); msg.innerHTML='<b style="color:var(--good)">Publicado!</b> Quem abrir o link verá estes dados em 1–2 minutos.'; }
+    try{ const blob=await encryptJson(window.LOCAL_DATA,PW_CUR); await publishToGitHub(blob,tok,'data.enc');
+      let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
+      if(!pwV){ pwV=prompt('Senha que os VENDEDORES vão usar no computador (diferente da sua):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
+      if(pwV){ const bv=await encryptJson(pacoteRestrito(window.LOCAL_DATA), pwV); await publishToGitHub(bv,tok,'data-vend.enc'); }
+      msg.innerHTML='<b style="color:var(--good)">Publicado!</b> Quem abrir o link verá estes dados em 1–2 minutos.'; }
     catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; bp.disabled=false; } };
   $('#drawer').classList.add('open'); $('#overlay').classList.add('show');
 }
@@ -2155,7 +2231,11 @@ async function handleFiles(files){
     $('#btnPub').onclick=async()=>{ let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
       if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" abaixo):'); if(!tok) return; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
       $('#btnPub').disabled=true; msg.textContent='Criptografando e publicando…';
-      try{ const blob=await encryptJson(IMPORTED,PW_CUR); await publishToGitHub(blob,tok); await idbSet('local',blob); msg.innerHTML='<b style="color:var(--good)">Publicado!</b> A equipe verá os dados novos em 1–2 minutos. Recarregando…'; setTimeout(()=>location.reload(),2500); }
+      try{ const blob=await encryptJson(IMPORTED,PW_CUR); await publishToGitHub(blob,tok,'data.enc'); await idbSet('local',blob);
+        let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
+        if(!pwV){ pwV=prompt('Senha que os VENDEDORES vão usar no computador (diferente da sua):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
+        if(pwV){ msg.textContent='Publicando o pacote dos vendedores…'; const bv=await encryptJson(pacoteRestrito(IMPORTED), pwV); await publishToGitHub(bv,tok,'data-vend.enc'); }
+        msg.innerHTML='<b style="color:var(--good)">Publicado!</b> A equipe verá os dados novos em 1–2 minutos.'+(pwV?' Pacote restrito dos vendedores também publicado.':'')+' Recarregando…'; setTimeout(()=>location.reload(),2500); }
       catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; $('#btnPub').disabled=false; } };
   }catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; lg.textContent+='\n'+e.message; }
 }
