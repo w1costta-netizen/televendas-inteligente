@@ -252,7 +252,11 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <p class="small muted" style="margin:0">A escolha fica salva neste aparelho e define qual lista aparece em <b>Tarefas do vendedor</b> e em nome de quem os contatos são registrados.</p>
   </div>
   <div id="semVinculo" style="margin-top:14px"></div>
-  <div class="card pad0" style="margin-top:14px"><div class="tbl-wrap" style="max-height:460px"><table id="tEquipe"></table></div></div>
+  <div id="meuPerfil" style="margin-top:14px"></div>
+  <h3 style="margin:18px 0 10px">Equipe</h3>
+  <div id="cartoesEquipe"></div>
+  <details class="card" style="margin-top:8px"><summary style="font-weight:700">Ver como tabela</summary>
+    <div class="tbl-wrap" style="max-height:460px;margin-top:10px"><table id="tEquipe"></table></div></details>
 </section>
 
 <!-- ================= TAREFAS DO VENDEDOR ================= -->
@@ -261,7 +265,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <p class="sub">Cada vendedor recebe uma lista curta de sócios para ligar. Toda tentativa é registrada — com ou sem sucesso — e o sócio só sai da fila quando é contatado. Depois de 3 tentativas sem resposta, ele vai para a lista de visita presencial.</p>
   <div class="card" style="margin-top:4px;border:2px solid var(--accent)">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-      <h3 style="margin:0">Minha lista de hoje</h3>
+      <h3 style="margin:0" id="tituloMinhaLista">Minha lista de hoje</h3>
       <label class="small muted" style="display:flex;align-items:center;gap:6px">Sou <select id="vEuSou2" class="btn sm"></select></label>
       <button class="btn sm" id="fMais" style="margin-left:auto">Puxar mais sócios</button>
     </div>
@@ -1123,6 +1127,79 @@ function exportaAcoes(){
 }
 
 /* ---------------------------------- equipe / perfil ---------------------------------- */
+/* ---- perfil: campos, foto e tempo de casa ---- */
+const CARGOS = ['Operador de Televendas','Vendedor Televendas','Vendedor Sênior','Supervisor de Televendas','Coordenador Comercial','Gerente de Televendas','Gerente Geral','Analista Comercial','Estagiário'];
+const TURNOS = ['Integral','Manhã','Tarde','6x1','Escala'];
+const iniciais = n => String(n||'?').trim().split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();
+function tempoDe(dataIso){
+  if(!dataIso) return null;
+  const d = pd(dataIso), hoje = new Date();
+  let m = (hoje.getFullYear()-d.getFullYear())*12 + (hoje.getMonth()-d.getMonth());
+  if(hoje.getDate() < d.getDate()) m--;
+  if(m < 0) return null;
+  const a = Math.floor(m/12), r = m%12;
+  return {meses:m, txt: a? `${a} ano${a>1?'s':''}${r?` e ${r} m${r>1?'eses':'ês'}`:''}` : `${r} m${r===1?'ês':'eses'}`};
+}
+function avatar(v, size){
+  size = size || 44;
+  return v.foto
+    ? `<img src="${v.foto}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex:none;border:2px solid var(--border)">`
+    : `<div style="width:${size}px;height:${size}px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:${size*0.38}px;flex:none">${esc(iniciais(v.nome))}</div>`;
+}
+function fotoResize(file){
+  return new Promise((res,rej)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{ const img=new Image(); img.onload=()=>{
+        const M=256, s=Math.min(M/img.width, M/img.height, 1), w=Math.round(img.width*s), hh=Math.round(img.height*s);
+        const cv=document.createElement('canvas'); cv.width=w; cv.height=hh;
+        cv.getContext('2d').drawImage(img,0,0,w,hh);
+        res(cv.toDataURL('image/jpeg',0.82)); };
+      img.onerror=rej; img.src=fr.result; };
+    fr.onerror=rej; fr.readAsDataURL(file);
+  });
+}
+/* números da pessoa, para o cartão de perfil */
+function numerosPessoa(v){
+  const ped = D.orders.filter(o=>o.operador && v.usuario && o.operador.toLowerCase()===v.usuario.toLowerCase());
+  const ok = ped.filter(o=>OK.has(o.status));
+  const fat = sum(ok,o=>o.valor);
+  const ac = ACOES.filter(a=>a.vendedor===v.nome);
+  const conv = ac.filter(a=>atribui(a).n>0).length;
+  return {ped:ped.length, ok:ok.length, fat, conv:ped.length? ok.length/ped.length*100:null,
+          ticket: ok.length? fat/ok.length : 0, contatos:ac.length, convContato: ac.length? conv/ac.length*100:null,
+          naFila: Object.values(FILA).filter(f=>f.vendedor===v.nome).length,
+          meta: v.metaMensal? fat/v.metaMensal*100 : null};
+}
+function cartaoPerfil(v, eu){
+  const n = numerosPessoa(v);
+  const te = tempoDe(v.admissao), tt = tempoDe(v.inicioTelevendas);
+  return `<div class="card" style="${eu?'border:2px solid var(--accent);':''}margin-bottom:12px">
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      ${avatar(v,72)}
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:19px;font-weight:700">${esc(v.nome)} ${v.ativo===false?'<span class="tag warn">inativo</span>':''} ${eu?'<span class="tag promo">este aparelho</span>':''}</div>
+        <div class="small" style="color:var(--text-2)">${esc(v.cargo||v.perfil||'Vendedor')}${v.perfil&&v.perfil!=='Vendedor'?` · <b>${esc(v.perfil)}</b>`:''}${v.clube?` · clube ${esc(v.clube)}`:''}${v.turno?` · ${esc(v.turno)}`:''}</div>
+        <div class="small muted" style="margin-top:4px">
+          ${v.usuario?`usuário <b>${esc(v.usuario)}</b>`:'<span style="color:var(--bad)">sem usuário vinculado</span>'}${v.matricula?` · matrícula ${esc(v.matricula)}`:''}
+          ${v.email?` · ${esc(v.email)}`:''}${v.telefone?` · ${esc(v.telefone)}`:''}${v.ramal?` · ramal ${esc(v.ramal)}`:''}
+        </div>
+        <div class="small muted" style="margin-top:2px">
+          ${te?`<b>${te.txt}</b> de empresa${v.admissao?` (desde ${fmtD(v.admissao)})`:''}`:'tempo de empresa não informado'}
+          ${tt?` · <b>${tt.txt}</b> no televendas`:''}
+          ${v.gestor?` · gestor: ${esc(v.gestor)}`:''}
+        </div>
+        ${v.obs?`<div class="small muted" style="margin-top:6px;padding:6px 8px;background:var(--surface-2);border-radius:6px">${esc(v.obs)}</div>`:''}
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start">
+        <div><div class="l small muted">FATURADO</div><div style="font-size:19px;font-weight:700">${fmtR(n.fat)}</div>
+          ${n.meta!=null?`<div class="small" style="color:${n.meta>=100?'var(--good)':'var(--warn)'}">${fmtP(n.meta)} da meta (${fmtR(v.metaMensal)})</div>`:''}</div>
+        <div><div class="l small muted">CONVERSÃO</div><div style="font-size:19px;font-weight:700">${n.conv==null?'—':fmtP(n.conv)}</div><div class="small muted">${n.ok}/${n.ped} pedidos</div></div>
+        <div><div class="l small muted">CONTATOS</div><div style="font-size:19px;font-weight:700">${n.contatos}</div><div class="small muted">${n.naFila} na fila${n.convContato!=null?` · ${fmtP(n.convContato)} viraram pedido`:''}</div></div>
+        <button class="btn sm" data-edp="${esc(v.nome)}" style="align-self:center">Editar perfil</button>
+      </div>
+    </div></div>`;
+}
+
 const PERFIS = ['Vendedor','Líder','Gerente geral'];
 /* VENDEDORES guarda a equipe: {nome, usuario, email, telefone, perfil, clube, ativo, origem} */
 const pessoaPorUsuario = u => VENDEDORES.find(v=>v.usuario && u && v.usuario.toLowerCase()===String(u).toLowerCase());
@@ -1146,6 +1223,7 @@ function renderEquipe(){
     kpi('Pessoas cadastradas', VENDEDORES.length, `${VENDEDORES.filter(v=>v.perfil==='Vendedor').length} vendedores · ${VENDEDORES.filter(v=>v.perfil!=='Vendedor').length} liderança`),
     kpi('Usuários nas planilhas', ops.length, semVinculo.length? `<span style="color:var(--bad)">${semVinculo.length} sem nome vinculado</span>` : 'todos vinculados'),
     kpi('Com e-mail', VENDEDORES.filter(v=>v.email).length, 'recebem a lista automática'),
+    kpi('Perfis completos', VENDEDORES.filter(v=>v.cargo&&v.admissao&&v.usuario).length, 'com cargo, admissão e usuário'),
     kpi('Eu sou', eu? esc(eu.nome) : '—', eu? `${esc(eu.perfil||'Vendedor')}${eu.usuario?` · usuário ${esc(eu.usuario)}`:''}` : 'selecione abaixo quem está usando'),
   ].join('');
 
@@ -1167,13 +1245,19 @@ function renderEquipe(){
     salvaVendedores().then(()=>{ renderEquipe(); renderFila(); });
   });
 
+  const euP = souPessoa();
+  $('#meuPerfil').innerHTML = euP ? `<h3 style="margin:0 0 10px">Meu perfil</h3>` + cartaoPerfil(euP, true) : '';
+  $('#cartoesEquipe').innerHTML = VENDEDORES.filter(v=>!euP||v.nome!==euP.nome).map(v=>cartaoPerfil(v,false)).join('') || '<div class="empty">Nenhuma pessoa cadastrada.</div>';
+  document.querySelectorAll('#meuPerfil [data-edp],#cartoesEquipe [data-edp]').forEach(b=>b.onclick=()=>openPessoa(VENDEDORES.find(v=>v.nome===b.dataset.edp)));
   table($('#tEquipe'),[
-    {k:'nome',l:'Nome',f:v=>`<b>${esc(v.nome)}</b>${v.ativo===false?' <span class="tag warn">inativo</span>':''}`,sort:true},
+    {k:'nome',l:'Nome',f:v=>`<div style="display:flex;gap:8px;align-items:center">${avatar(v,28)}<div><b>${esc(v.nome)}</b>${v.ativo===false?' <span class="tag warn">inativo</span>':''}<div class="small muted">${esc(v.cargo||'')}</div></div></div>`,sort:true},
     {k:'usuario',l:'Usuário na plataforma',f:v=>v.usuario?`<span class="tag">${esc(v.usuario)}</span>`:'<span class="small muted">não vinculado</span>'},
     {k:'perfil',l:'Perfil',f:v=>esc(v.perfil||'Vendedor')},
     {k:'email',l:'E-mail',f:v=>v.email?esc(v.email):'<span class="small muted">—</span>'},
     {k:'telefone',l:'Telefone',f:v=>v.telefone?esc(v.telefone):'<span class="small muted">—</span>'},
     {k:'clube',l:'Clube',f:v=>esc(v.clube||'—')},
+    {k:'emp',l:'Tempo de empresa',num:true,v:v=>tempoDe(v.admissao)?.meses??-1,f:v=>tempoDe(v.admissao)?.txt||'<span class="small muted">—</span>'},
+    {k:'tv',l:'No televendas',num:true,v:v=>tempoDe(v.inicioTelevendas)?.meses??-1,f:v=>tempoDe(v.inicioTelevendas)?.txt||'<span class="small muted">—</span>'},
     {k:'carga',l:'Na fila',num:true,v:v=>Object.values(FILA).filter(f=>f.vendedor===v.nome).length},
     {k:'ac',l:'Contatos',num:true,v:v=>ACOES.filter(a=>a.vendedor===v.nome).length},
     {k:'ed',l:'',f:v=>`<button class="btn sm" data-edp="${esc(v.nome)}">Editar</button> <button class="btn sm" data-delp="${esc(v.nome)}">✕</button>`},
@@ -1192,9 +1276,20 @@ function openPessoa(v){
   document.body.insertAdjacentHTML('beforeend', `<div id="pBox" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px;overflow:auto">
     <div class="card" style="width:min(560px,100%)">
       <h3 style="margin-bottom:10px">${novo?'Nova pessoa':'Editar '+esc(v.nome)}</h3>
+      <div style="display:flex;gap:14px;align-items:center;margin-bottom:12px">
+        <div id="pFotoPrev">${avatar(v,72)}</div>
+        <div><label class="btn sm" style="cursor:pointer">Escolher foto<input type="file" id="pFoto" accept="image/*" style="display:none"></label>
+          ${v.foto?'<button class="btn sm" id="pFotoDel" style="margin-left:6px">Remover</button>':''}
+          <div class="small muted" style="margin-top:4px">A imagem é reduzida e fica salva junto do cadastro.</div></div>
+      </div>
       <div class="two">
         <label class="small muted">Nome completo<input id="pNome" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.nome)}"></label>
-        <label class="small muted">Perfil<select id="pPerfil" class="btn" style="width:100%;margin:4px 0 10px">${PERFIS.map(x=>`<option ${x===v.perfil?'selected':''}>${x}</option>`).join('')}</select></label>
+        <label class="small muted">Cargo<input id="pCargo" class="btn" list="cargosList" style="width:100%;margin:4px 0 10px" value="${esc(v.cargo||'')}" placeholder="ex.: Operador de Televendas"></label>
+      </div>
+      <datalist id="cargosList">${CARGOS.map(c=>`<option>${c}</option>`).join('')}</datalist>
+      <div class="two">
+        <label class="small muted">Perfil de acesso<select id="pPerfil" class="btn" style="width:100%;margin:4px 0 10px">${PERFIS.map(x=>`<option ${x===v.perfil?'selected':''}>${x}</option>`).join('')}</select></label>
+        <label class="small muted">Matrícula<input id="pMat" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.matricula||'')}"></label>
       </div>
       <label class="small muted">Usuário na plataforma (coluna “Operador” dos pedidos)
         <select id="pUser" class="btn" style="width:100%;margin:4px 0 10px">
@@ -1203,21 +1298,41 @@ function openPessoa(v){
           ${v.usuario&&!opsLivres.includes(v.usuario)?`<option selected>${esc(v.usuario)}</option>`:''}
         </select></label>
       <div class="two">
+        <label class="small muted">Admissão na empresa<input type="date" id="pAdm" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.admissao||'')}"></label>
+        <label class="small muted">Entrada no televendas<input type="date" id="pTv" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.inicioTelevendas||'')}"></label>
+      </div>
+      <div class="two">
         <label class="small muted">E-mail<input id="pEmail" type="email" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.email||'')}"></label>
-        <label class="small muted">Telefone<input id="pTel" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.telefone||'')}"></label>
+        <label class="small muted">Telefone / WhatsApp<input id="pTel" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.telefone||'')}"></label>
+      </div>
+      <div class="two">
+        <label class="small muted">Ramal<input id="pRamal" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.ramal||'')}"></label>
+        <label class="small muted">Turno<select id="pTurno" class="btn" style="width:100%;margin:4px 0 10px"><option value="">—</option>${TURNOS.map(t=>`<option ${t===v.turno?'selected':''}>${t}</option>`).join('')}</select></label>
       </div>
       <div class="two">
         <label class="small muted">Clube<select id="pClube" class="btn" style="width:100%;margin:4px 0 10px"><option value="">todos</option>${clubes.map(c=>`<option ${c===v.clube?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
+        <label class="small muted">Gestor imediato<select id="pGestor" class="btn" style="width:100%;margin:4px 0 10px"><option value="">—</option>${VENDEDORES.filter(x=>x.nome!==v.nome).map(x=>`<option ${x.nome===v.gestor?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></label>
+      </div>
+      <div class="two">
+        <label class="small muted">Meta mensal (R$)<input type="number" id="pMeta" class="btn" style="width:100%;margin:4px 0 10px" value="${v.metaMensal||''}" placeholder="ex.: 150000"></label>
         <label class="chk" style="padding-top:22px"><input type="checkbox" id="pAtivo" ${v.ativo!==false?'checked':''}> Ativo</label>
       </div>
+      <label class="small muted">Observações<textarea id="pObs" class="btn" style="width:100%;min-height:60px;margin:4px 0 12px">${esc(v.obs||'')}</textarea></label>
       <div style="display:flex;gap:8px;margin-top:6px"><button class="btn primary" id="pOk">Salvar</button><button class="btn" id="pCancel">Cancelar</button></div>
     </div></div>`);
+  let fotoAtual = v.foto || '';
+  $('#pFoto').onchange=async e=>{ const f=e.target.files[0]; if(!f) return;
+    try{ fotoAtual = await fotoResize(f); $('#pFotoPrev').innerHTML = avatar({nome:$('#pNome').value, foto:fotoAtual},72); }catch(err){ alert('Não foi possível ler a imagem.'); } };
+  if($('#pFotoDel')) $('#pFotoDel').onclick=()=>{ fotoAtual=''; $('#pFotoPrev').innerHTML=avatar({nome:$('#pNome').value},72); };
   $('#pCancel').onclick=()=>$('#pBox').remove();
   $('#pOk').onclick=async()=>{
     const nome=$('#pNome').value.trim(); if(!nome){ alert('Informe o nome.'); return; }
     const antigo=v.nome;
     const dados={nome, usuario:$('#pUser').value.trim(), email:$('#pEmail').value.trim(), telefone:$('#pTel').value.trim(),
-      perfil:$('#pPerfil').value, clube:$('#pClube').value, ativo:$('#pAtivo').checked, origem:v.origem||'manual'};
+      perfil:$('#pPerfil').value, clube:$('#pClube').value, ativo:$('#pAtivo').checked, origem:v.origem||'manual',
+      foto:fotoAtual, cargo:$('#pCargo').value.trim(), matricula:$('#pMat').value.trim(), ramal:$('#pRamal').value.trim(),
+      turno:$('#pTurno').value, admissao:$('#pAdm').value, inicioTelevendas:$('#pTv').value,
+      gestor:$('#pGestor').value, metaMensal: +$('#pMeta').value || null, obs:$('#pObs').value.trim()};
     if(novo){ if(VENDEDORES.some(x=>x.nome===nome)){ alert('Já existe alguém com esse nome.'); return; } VENDEDORES.push(dados); }
     else { const i=VENDEDORES.findIndex(x=>x.nome===antigo); VENDEDORES[i]=dados; await migraFila(antigo, nome);
       if(vendedorNome()===antigo){ try{ localStorage.setItem('tv_vend', nome); }catch(e){} } }
@@ -1225,8 +1340,9 @@ function openPessoa(v){
   };
 }
 function exportaEquipe(){
-  const rows=[['nome','usuario_plataforma','perfil','email','telefone','clube','ativo']];
-  for(const v of VENDEDORES) rows.push([v.nome, v.usuario||'', v.perfil||'Vendedor', v.email||'', v.telefone||'', v.clube||'', v.ativo===false?'não':'sim']);
+  const rows=[['nome','matricula','usuario_plataforma','cargo','perfil','email','telefone','ramal','clube','turno','admissao','inicio_televendas','tempo_empresa','tempo_televendas','gestor','meta_mensal','ativo']];
+  for(const v of VENDEDORES) rows.push([v.nome, v.matricula||'', v.usuario||'', v.cargo||'', v.perfil||'Vendedor', v.email||'', v.telefone||'', v.ramal||'', v.clube||'', v.turno||'',
+    v.admissao||'', v.inicioTelevendas||'', tempoDe(v.admissao)?.txt||'', tempoDe(v.inicioTelevendas)?.txt||'', v.gestor||'', v.metaMensal||'', v.ativo===false?'não':'sim']);
   const csv='﻿'+rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='equipe-televendas.csv'; a.click();
 }
@@ -1442,6 +1558,8 @@ async function renderFila(){
       const fa=['contatado','visita'].includes(a.s.st)?1:0, fb=['contatado','visita'].includes(b.s.st)?1:0;
       return fa-fb || (b.c.fatLYall||b.c.fat)-(a.c.fatLYall||a.c.fat); });
   const feitos = meus.filter(x=>['contatado','visita'].includes(x.s.st)).length;
+  const pEu = souPessoa();
+  $('#tituloMinhaLista').innerHTML = pEu ? `<span style="display:inline-flex;align-items:center;gap:8px;vertical-align:middle">${avatar(pEu,28)} Minha lista de hoje</span>` : 'Minha lista de hoje';
   $('#progBar').style.width = meus.length? (feitos/meus.length*100)+'%' : '0%';
   $('#progTxt').innerHTML = !meu ? (VENDEDORES.length
       ? 'Escolha seu nome em <b>“Sou”</b> acima para carregar sua lista.'
