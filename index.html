@@ -176,12 +176,12 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <nav class="tabs" id="tabs">
     <button data-v="geral" class="active">Visão geral</button>
     <button data-v="carteira">Carteira de sócios <span class="n" id="nCart"></span></button>
-    <button data-v="fila">Fila de contatos <span class="n" id="nFila"></span></button>
     <button data-v="yoy">Ano × ano <span class="n" id="nYoy"></span></button>
     <button data-v="ofertas">Ofertas</button>
     <button data-v="estoque">Estoque & margem</button>
     <button data-v="intel">Inteligência <span class="n" id="nIntel"></span></button>
     <button data-v="result">Resultados</button>
+    <button data-v="tarefas">Tarefas do vendedor <span class="n" id="nFila"></span></button>
   </nav>
 </header>
 
@@ -225,9 +225,9 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <div class="card pad0"><div class="tbl-wrap"><table id="tCart"></table></div></div>
 </section>
 
-<!-- ================= FILA ================= -->
-<section class="view" id="v-fila">
-  <h2>Fila de contatos</h2>
+<!-- ================= TAREFAS DO VENDEDOR ================= -->
+<section class="view" id="v-tarefas">
+  <h2>Tarefas do vendedor</h2>
   <p class="sub">Cada vendedor recebe uma lista curta de sócios para ligar. Toda tentativa é registrada — com ou sem sucesso — e o sócio só sai da fila quando é contatado. Depois de 3 tentativas sem resposta, ele vai para a lista de visita presencial.</p>
   <div class="grid kpis" id="kpisFila"></div>
 
@@ -256,6 +256,12 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </div>
 
   <div id="filaVend" style="margin-top:14px"></div>
+
+  <div class="card" style="margin-top:14px">
+    <h3>Histórico de tentativas registradas <button class="btn sm" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button></h3>
+    <p class="small muted" style="margin:0 0 10px">Tudo o que a equipe registrou: quem ligou, se conseguiu falar, o motivo e se o sócio comprou depois.</p>
+    <div class="tbl-wrap" style="max-height:340px"><table id="tAcoes"></table></div>
+  </div>
 
   <div class="grid row11" style="margin-top:14px">
     <div class="card"><h3>Sem contato após 3 tentativas — avaliar visita presencial</h3>
@@ -371,13 +377,10 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </div>
   <div class="card" style="margin-top:14px">
     <h3>3 · Efetividade da ferramenta</h3>
-    <p class="small muted" style="margin:0 0 10px">Cada contato registrado na ficha do sócio é confrontado com os pedidos dos 7 dias seguintes — é assim que o valor em reais fica rastreável até o alerta que o originou.
-      <button class="btn sm" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button></p>
+    <p class="small muted" style="margin:0 0 10px">Cada contato registrado em <b>Tarefas do vendedor</b> é confrontado com os pedidos dos 7 dias seguintes — é assim que o valor em reais fica rastreável até o alerta que o originou.</p>
     <div class="grid kpis" id="kpisTool"></div>
-    <div class="grid row11" style="margin-top:12px">
-      <div><h3 style="font-size:12px">Por tipo de alerta</h3><div class="tbl-wrap" style="max-height:280px"><table id="tTool"></table></div></div>
-      <div><h3 style="font-size:12px">Contatos registrados</h3><div class="tbl-wrap" style="max-height:280px"><table id="tAcoes"></table></div></div>
-    </div>
+    <div style="margin-top:12px"><h3 style="font-size:12px">Conversão por tipo de alerta</h3><div class="tbl-wrap" style="max-height:300px"><table id="tTool"></table></div></div>
+    <p class="small muted" style="margin:10px 0 0">O registro nominal de cada ligação fica em <b>Tarefas do vendedor</b> — aqui ficam apenas os indicadores.</p>
   </div>
   <div class="card" style="margin-top:14px">
     <h3>4 · Qualidade dos dados</h3>
@@ -586,12 +589,14 @@ function renderCarteira(){
     {k:'atraso',l:'Recompra',num:true,f:c=>c.atraso==null?'—':c.atraso>0?`<span class="pill REJEITADO">atrasada ${c.atraso}d</span>`:`<span class="pill FATURADO">em ${-c.atraso}d</span>`},
     {k:'score',l:'Risco',f:riskHtml},
     {k:'itens',l:'Itens',num:true,v:c=>c.itens.length},
+    {k:'acao',l:'Contato',num:true,v:c=>situacao(c.id).tentativas,f:c=>{const s=situacao(c.id); return `<button class="btn sm" data-tentcart="${esc(c.id)}">☎ Registrar</button>${s.acs.length?`<div class="small muted">${s.contatos?'falou '+s.contatos+'x':''}${s.tentativas?` · ${s.tentativas}/${MAX_TENTATIVAS} sem contato`:''}</div>`:''}`;}},
   ], rows, {row:openClient, id:c=>c.id});
+  $('#tCart').querySelectorAll('[data-tentcart]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTentativa(CLI.find(x=>x.id===b.dataset.tentcart)); });
 }
 function openClient(id){
   const c = cliById().get(id); if(!c) return;
   const promoItens = c.itens.filter(i=>i.promo), lowItens=c.itens.filter(i=>i.n>0&&i.estoque!=null&&i.estoque<=0);
-  $('#dhead').innerHTML = `<h2>${esc(c.nome)}</h2><div class="small muted">Sócio nº ${c.num} · ${riskHtml(c)} · ${c.nOk} pedidos faturados de ${c.n}</div>`;
+  $('#dhead').innerHTML = `<h2>${esc(c.nome)} <button class="btn primary sm" id="btnAcaoTopo" style="margin-left:10px;vertical-align:middle">☎ Registrar tentativa de contato</button></h2><div class="small muted">Sócio nº ${c.num} · ${riskHtml(c)} · ${c.nOk} pedidos faturados de ${c.n}</div>`;
   const script = buildScript(c, promoItens, lowItens);
   $('#dbody').innerHTML = `
     <div class="grid kpis" style="margin-bottom:14px">
@@ -627,6 +632,7 @@ function openClient(id){
   $('#copyScript').onclick=()=>{ navigator.clipboard?.writeText(script); $('#copyScript').textContent='Copiado ✓'; };
   const origemSug = c.yoy==='nao'?'nao' : (c.atraso>0?'atraso' : (!c.nOk?'perdido' : (promoItens.length?'oferta':'outro')));
   $('#btnAcao').onclick=()=>openTentativa(c);
+  $('#btnAcaoTopo').onclick=()=>openTentativa(c);
   const hist=acoesDoSocio(c.id);
   $('#acHist').innerHTML = hist.length
     ? `<table>${hist.map(a=>{const r=atribui(a); return `<tr><td class="small">${fmtDT(a.quando)}</td><td>${a.contato===false?`<span class="tag warn">sem contato</span>`:`<span class="tag ${a.resultado==='Pedido fechado'?'promo':''}">${esc(a.resultado)}</span>`}</td><td class="small muted">${esc(a.motivoSemContato||a.motivoNaoCompra||ALERT_TIPOS[a.origem]||'')} · ${esc(a.vendedor)}${a.obs?`<br>${esc(a.obs)}`:''}</td><td class="num small">${r.n?`<b style="color:var(--good)">${fmtR(r.valor)}</b> em ${JANELA}d`:''}</td></tr>`;}).join('')}</table>`
@@ -1009,6 +1015,11 @@ function renderResultados(){
     {k:'valor',l:'R$ atribuído',num:true,f:r=>fmtR(r.valor)},
     {k:'res',l:'Resultados registrados',f:r=>Object.entries(r.res).map(([k,v])=>`<span class="tag">${esc(k)}: ${v}</span>`).join(' ')},
   ],[...porTipo.values()]);
+  qualidadeDados();
+}
+function tabelaAcoes(){
+  const ac=ACOES.filter(a=>!getClub()||getClub()==='all'||a.clube===getClub());
+  if(!$('#tAcoes')) return;
   table($('#tAcoes'),[
     {k:'quando',l:'Quando',num:true,f:a=>fmtDT(a.quando),sort:true},
     {k:'nome',l:'Sócio',f:a=>`<b>${esc(a.nome)}</b><div class="small muted">${esc(ALERT_TIPOS[a.origem]||a.origem||'—')}</div>`},
@@ -1017,7 +1028,8 @@ function renderResultados(){
     {k:'atrib',l:`Pedido em ${JANELA}d`,num:true,v:a=>atribui(a).valor,f:a=>{const r=atribui(a); return r.n? `<b style="color:var(--good)">${fmtR(r.valor)}</b><div class="small muted">${r.n} pedido(s)</div>`:'<span class="muted">—</span>';}},
     {k:'obs',l:'Observação',f:a=>esc(a.obs||'')},
   ],ac);
-
+}
+function qualidadeDados(){
   // ---- qualidade dos dados
   const naoOk=D.orders.filter(o=>!OK.has(o.status));
   const comMotivo=naoOk.filter(o=>o.motivo_ped||o.itens.some(i=>i.motivo));
@@ -1213,11 +1225,19 @@ function renderFila(){
         <td>${ST_LABEL[s.st]}${s.tentativas?`<div class="small muted">${s.tentativas}/${MAX_TENTATIVAS} tentativas</div>`:''}</td>
         <td>${CADASTRO[c.id]?.segmento?`<span class="tag">${esc(CADASTRO[c.id].segmento)}</span>`:'<span class="small muted">sem cadastro</span>'}</td>
         <td class="num"><button class="btn sm" data-tent="${esc(c.id)}">Registrar tentativa</button></td></tr>`).join('')}</table></div>`;
-  }).join('') : '<div class="empty">Nenhuma lista gerada. Escolha o critério acima e clique em “Gerar listas”.</div>';
+  }).join('') : `<div class="card" style="border-style:dashed"><h3>Como começar (1 minuto)</h3>
+      <ol style="margin:0;padding-left:20px;line-height:1.9">
+        <li><b>Cadastre os vendedores</b> no quadro acima (nome e e-mail) e clique em <b>Adicionar vendedor</b>.</li>
+        <li>Escolha <b>quem entra na lista</b> e quantos sócios por vendedor (sugerido: 5).</li>
+        <li>Clique em <b>Gerar listas</b> — cada vendedor recebe seu bloco aqui embaixo.</li>
+        <li>Use <b>Enviar por e-mail</b> para mandar a lista, e <b>☎ Registrar tentativa</b> a cada ligação.</li>
+      </ol>
+      <p class="small muted" style="margin:12px 0 0">Também dá para registrar uma ligação sem gerar lista: vá em <b>Carteira de sócios</b> e clique em <b>☎ Registrar</b> na linha do sócio, ou abra a ficha dele.</p></div>`;
   $('#filaVend').querySelectorAll('[data-tent]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTentativa(CLI.find(c=>c.id===b.dataset.tent)); });
   $('#filaVend').querySelectorAll('[data-mail]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openEmail(b.dataset.mail, porVend.get(b.dataset.mail)||[]); });
   $('#filaVend').querySelectorAll('tr.rowlink').forEach(tr=>tr.onclick=()=>openClient(tr.dataset.cli));
 
+  tabelaAcoes();
   // visitas
   table($('#tVisita'),[
     {k:'nome',l:'Sócio',v:c=>c.nome,f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num} · última compra ${c.lastOk?fmtD(c.lastOk):'nunca'}</div>`},
@@ -1324,7 +1344,7 @@ function exportaCadastro(){
 }
 
 /* ---------------------------------- navegação ---------------------------------- */
-function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,fila:renderFila})[v](); window.scrollTo({top:0}); }
+function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
 document.addEventListener('click',e=>{ const k=e.target.closest('[data-go]'); if(k) go(k.dataset.go); const c=e.target.closest('[data-cli]'); if(c&&!e.target.closest('.drawer')) openClient(c.dataset.cli); });
 ['#cSearch','#cDias','#cSit','#cRisco'].forEach(s=>$(s).addEventListener('input',renderCarteira));
