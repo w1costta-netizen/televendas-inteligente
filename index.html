@@ -257,6 +257,11 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <div id="cartoesEquipe"></div>
   <details class="card" style="margin-top:8px"><summary style="font-weight:700">Ver como tabela</summary>
     <div class="tbl-wrap" style="max-height:460px;margin-top:10px"><table id="tEquipe"></table></div></details>
+  <div class="card" style="margin-top:14px">
+    <h3>Privacidade e LGPD</h3>
+    <p class="small muted" style="margin:0 0 12px">Este app trata dados pessoais de empregados e de contatos dos sócios. Configure abaixo o que é compartilhado com a equipe e por quanto tempo os registros ficam guardados.</p>
+    <div id="lgpdBox"></div>
+  </div>
 </section>
 
 <!-- ================= TAREFAS DO VENDEDOR ================= -->
@@ -925,7 +930,7 @@ function renderYoyIt(){
 const RESULTADOS = ['Pedido fechado','Vai avaliar','Não atendeu','Sem interesse','Sem estoque / preço'];
 const ALERT_TIPOS = {nao:'Não voltou este ano', atraso:'Recompra atrasada', perdido:'Pediu e não faturou', rejeito:'Rejeitado por preço', oferta:'Oferta acabando', cross:'Cross-sell', queda:'Queda vs ano anterior', outro:'Outro / sem alerta'};
 let ACOES = window.__acoes || [];
-let __FILA_INIT = window.__fila || {}, __CAD_INIT = window.__cadastro || {}, __VEND_INIT = window.__vendedores || [];
+let __FILA_INIT = window.__fila || {}, __CAD_INIT = window.__cadastro || {}, __VEND_INIT = window.__vendedores || [], __PRIV_INIT = window.__priv || null;
 const vendedorNome = () => { try{ return localStorage.getItem('tv_vend')||''; }catch(e){ return ''; } };
 async function saveAcoes(){ window.__acoes = ACOES; await idbSet('acoes', ACOES); }
 async function registraAcao(a){ ACOES.push(a); await saveAcoes(); }
@@ -1126,6 +1131,131 @@ function exportaAcoes(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='contatos-televendas.csv'; a.click();
 }
 
+/* ---------------------------------- LGPD / privacidade ---------------------------------- */
+/* Campos operacionais (necessários para a equipe trabalhar) × campos de RH (restritos ao líder). */
+const CAMPOS_OPERACIONAIS = ['nome','usuario','cargo','perfil','email','ramal','clube','turno','gestor','metaMensal','ativo','origem'];
+const CAMPOS_RH = ['matricula','admissao','inicioTelevendas','telefone','obs'];
+const CAMPOS_FOTO = ['foto'];
+let PRIV = {publicarRH:false, publicarFoto:false, publicarContatosSocios:true, encarregado:'', retencaoMeses:24, consentimentoFoto:{}};
+async function salvaPriv(){ window.__priv = PRIV; await idbSet('priv', PRIV); }
+
+function equipeParaPublicar(){
+  return VENDEDORES.map(v=>{
+    const o = {};
+    for(const k of CAMPOS_OPERACIONAIS) if(v[k]!==undefined && v[k]!=='') o[k]=v[k];
+    if(PRIV.publicarRH) for(const k of CAMPOS_RH) if(v[k]!==undefined && v[k]!=='') o[k]=v[k];
+    if(PRIV.publicarFoto && PRIV.consentimentoFoto[v.nome]) for(const k of CAMPOS_FOTO) if(v[k]) o[k]=v[k];
+    return o;
+  });
+}
+function cadastroParaPublicar(){
+  if(!PRIV.publicarContatosSocios) return {};
+  return CADASTRO;
+}
+/* mescla o cadastro publicado sem sobrescrever o que é local e mais sensível */
+function mesclaEquipeRemota(remota){
+  if(!Array.isArray(remota)) return false;
+  let mudou=false;
+  for(const r of remota){
+    const i = VENDEDORES.findIndex(v=>v.nome===r.nome || (r.usuario && v.usuario===r.usuario));
+    if(i<0){ VENDEDORES.push({...r, ativo:r.ativo!==false}); mudou=true; }
+    else { for(const [k,val] of Object.entries(r)) if(VENDEDORES[i][k]===undefined || VENDEDORES[i][k]==='' ){ VENDEDORES[i][k]=val; mudou=true; } }
+  }
+  return mudou;
+}
+/* retenção: apaga registros de contato mais antigos que o prazo definido */
+async function aplicaRetencao(){
+  const meses = PRIV.retencaoMeses|0; if(!meses) return 0;
+  const limite = new Date(); limite.setMonth(limite.getMonth()-meses);
+  const antes = ACOES.length;
+  ACOES = ACOES.filter(a=>new Date(a.quando) >= limite);
+  if(ACOES.length!==antes){ await saveAcoes(); }
+  return antes - ACOES.length;
+}
+/* direitos do titular */
+function exportaMeusDados(){
+  const eu = souPessoa(); if(!eu){ alert('Selecione quem está usando este aparelho em “Eu sou”.'); return; }
+  const pacote = {perfil:eu, contatosRegistrados:ACOES.filter(a=>a.vendedor===eu.nome),
+    filaAtribuida:Object.entries(FILA).filter(([k,f])=>f.vendedor===eu.nome).map(([k,f])=>({socio:k,...f})),
+    geradoEm:new Date().toISOString(), observacao:'Pacote de portabilidade (art. 18, V, LGPD) gerado pelo app Televendas Inteligente.'};
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,2)],{type:'application/json'}));
+  a.download='meus-dados-televendas.json'; a.click();
+}
+async function excluiMeusDados(){
+  const eu = souPessoa(); if(!eu){ alert('Selecione quem está usando este aparelho em “Eu sou”.'); return; }
+  if(!confirm(`Remover o perfil de ${eu.nome} deste aparelho e anonimizar os contatos registrados em nome dele(a)?\n\nOs registros de contato permanecem para fins de histórico comercial, mas sem identificar o vendedor.`)) return;
+  for(const a of ACOES) if(a.vendedor===eu.nome) a.vendedor='(removido)';
+  for(const k of Object.keys(FILA)) if(FILA[k].vendedor===eu.nome) delete FILA[k];
+  VENDEDORES = VENDEDORES.filter(v=>v.nome!==eu.nome);
+  try{ localStorage.removeItem('tv_vend'); }catch(e){}
+  await saveAcoes(); await salvaFila(); await salvaVendedores();
+  renderEquipe(); renderFila();
+  alert('Perfil removido deste aparelho e registros anonimizados.');
+}
+async function limpaTudoLocal(){
+  if(!confirm('Apagar deste aparelho TODOS os dados locais (equipe, fila, contatos, cadastro de sócios e dados importados)?\n\nIsso não afeta o que está publicado para a equipe.')) return;
+  for(const k of ['acoes','fila','cadastro','vendedores','local','priv','filaCfg','alertas_hist']) await idbDel(k);
+  try{ localStorage.removeItem('tv_vend'); localStorage.removeItem('tv_pw'); }catch(e){}
+  location.reload();
+}
+
+function renderPrivacidade(){
+  const el = $('#lgpdBox'); if(!el) return;
+  const comFoto = VENDEDORES.filter(v=>v.foto);
+  el.innerHTML = `
+    <div class="two">
+      <div>
+        <h3 style="font-size:13px">O que este app trata</h3>
+        <ul class="small" style="margin:0 0 12px;padding-left:18px;line-height:1.7;color:var(--text-2)">
+          <li><b>Dados de empregados:</b> nome, usuário, cargo, contato corporativo, metas e desempenho — e, se o líder optar, matrícula, admissão e foto.</li>
+          <li><b>Dados de contato dos sócios:</b> razão social, nome do responsável, telefone, endereço, atividade e histórico de compras e ligações.</li>
+          <li><b>Finalidade:</b> gestão da operação de televendas (distribuição de carteira, registro de contatos e medição de resultado).</li>
+          <li><b>Base legal:</b> execução de contrato de trabalho e legítimo interesse do controlador (arts. 7º, V e IX, LGPD) — a foto depende de <b>consentimento</b> do empregado.</li>
+          <li><b>Segurança:</b> todo o pacote é cifrado em AES-256 com senha e trafega por HTTPS; nada é enviado a terceiros.</li>
+        </ul>
+        <label class="small muted">Encarregado de dados (DPO) — contato para os titulares
+          <input id="pvDpo" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(PRIV.encarregado||'')}" placeholder="nome e e-mail do encarregado"></label>
+      </div>
+      <div>
+        <h3 style="font-size:13px">O que é publicado para a equipe</h3>
+        <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="pvRH" ${PRIV.publicarRH?'checked':''}> Publicar dados de RH (matrícula, admissão, telefone pessoal, observações)</label>
+        <p class="small muted" style="margin:0 0 10px">Desmarcado, esses campos ficam <b>só no aparelho do líder</b>. Recomendado manter desmarcado — princípio da minimização (art. 6º, III).</p>
+        <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="pvFoto" ${PRIV.publicarFoto?'checked':''}> Publicar fotos de perfil (apenas de quem consentiu)</label>
+        <div id="pvConsent" style="margin:0 0 10px"></div>
+        <label class="chk" style="margin-bottom:6px"><input type="checkbox" id="pvSoc" ${PRIV.publicarContatosSocios?'checked':''}> Publicar telefones e atividade dos sócios</label>
+        <p class="small muted" style="margin:0 0 10px">Necessário para a equipe ligar. Desmarque se preferir que cada vendedor use apenas a própria lista.</p>
+        <label class="small muted">Prazo de retenção dos registros de contato
+          <select id="pvRet" class="btn" style="width:100%;margin:4px 0 10px">
+            ${[12,24,36,60].map(m=>`<option value="${m}" ${PRIV.retencaoMeses===m?'selected':''}>${m} meses</option>`).join('')}
+            <option value="0" ${!PRIV.retencaoMeses?'selected':''}>sem descarte automático</option>
+          </select></label>
+        <button class="btn sm" id="pvRetAgora">Aplicar descarte agora</button>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <h3 style="font-size:13px">Direitos do titular (art. 18)</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sm" id="pvExp">Exportar meus dados</button>
+        <button class="btn sm" id="pvDel">Remover meu perfil e anonimizar registros</button>
+        <button class="btn sm" id="pvWipe" style="color:var(--bad)">Apagar todos os dados deste aparelho</button>
+      </div>
+      <p class="small muted" style="margin:10px 0 0">Mantenha este tratamento registrado no inventário de dados da empresa e informe a equipe antes de cadastrar os perfis.</p>
+    </div>`;
+  $('#pvConsent').innerHTML = comFoto.length
+    ? `<div class="small muted" style="padding-left:22px">Consentimento para uso da foto: ${comFoto.map(v=>`<label class="chk" style="display:inline-flex;margin-right:10px"><input type="checkbox" data-cons="${esc(v.nome)}" ${PRIV.consentimentoFoto[v.nome]?'checked':''}> ${esc(v.nome)}</label>`).join('')}</div>`
+    : '<p class="small muted" style="margin:0 0 10px;padding-left:22px">Nenhuma foto cadastrada ainda.</p>';
+  $('#pvConsent').querySelectorAll('[data-cons]').forEach(c=>c.onchange=async()=>{ PRIV.consentimentoFoto[c.dataset.cons]=c.checked; await salvaPriv(); });
+  $('#pvDpo').onchange=async()=>{ PRIV.encarregado=$('#pvDpo').value.trim(); await salvaPriv(); };
+  $('#pvRH').onchange=async()=>{ PRIV.publicarRH=$('#pvRH').checked; await salvaPriv(); };
+  $('#pvFoto').onchange=async()=>{ PRIV.publicarFoto=$('#pvFoto').checked; await salvaPriv(); };
+  $('#pvSoc').onchange=async()=>{ PRIV.publicarContatosSocios=$('#pvSoc').checked; await salvaPriv(); };
+  $('#pvRet').onchange=async()=>{ PRIV.retencaoMeses=+$('#pvRet').value; await salvaPriv(); };
+  $('#pvRetAgora').onclick=async()=>{ const n=await aplicaRetencao(); alert(n? `${n} registro(s) de contato descartados pelo prazo de retenção.` : 'Nenhum registro fora do prazo.'); renderEquipe(); };
+  $('#pvExp').onclick=exportaMeusDados;
+  $('#pvDel').onclick=excluiMeusDados;
+  $('#pvWipe').onclick=limpaTudoLocal;
+}
+
 /* ---------------------------------- equipe / perfil ---------------------------------- */
 /* ---- perfil: campos, foto e tempo de casa ---- */
 const CARGOS = ['Operador de Televendas','Vendedor Televendas','Vendedor Sênior','Supervisor de Televendas','Coordenador Comercial','Gerente de Televendas','Gerente Geral','Analista Comercial','Estagiário'];
@@ -1216,6 +1346,7 @@ async function migraFila(antigo, novo){
 }
 
 function renderEquipe(){
+  renderPrivacidade();
   const ops = [...new Set(D.orders.map(o=>o.operador).filter(Boolean))].sort();
   const semVinculo = ops.filter(o=>!pessoaPorUsuario(o));
   const eu = souPessoa();
@@ -1454,6 +1585,8 @@ function baixaEml(para, assunto, html){
 /* lista de trabalho do vendedor — cartões prontos para ligar */
 const telLimpo = t => String(t||'').replace(/\D/g,'');
 const telWa = t => { const d=telLimpo(t); return d? (d.length<=11? '55'+d : d) : ''; };
+window.__equipePub = () => equipeParaPublicar();
+window.__cadastroPub = () => cadastroParaPublicar();
 window.__aplicaContatos = async function(lista){
   const porNum=new Map(), porNome=new Map();
   const norm = s => String(s??'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9 ]/g,'').replace(/\s+/g,' ').trim();
@@ -1758,6 +1891,10 @@ $('#themeBtn').onclick=()=>{const r=document.documentElement; const dark=matchMe
 $('#clube').textContent=D.meta.clube_nome;
 $('#metaBadges').innerHTML=`<span class="badge info"><span class="dot"></span>Pedidos: ${fmtD(D.meta.pedidos_periodo[0])} – ${fmtD(D.meta.pedidos_periodo[1])}</span><span class="badge"><span class="dot"></span>Estoque e ofertas: ${fmtD(D.meta.extracao_estoque)}</span>${Math.abs(days(D.meta.extracao_estoque,D.meta.pedidos_periodo[1]))>45?`<span class="badge warn" title="Pedidos e estoque/ofertas foram extraídos em datas distantes. Na plataforma final as três fontes serão atualizadas juntas."><span class="dot"></span>Bases com datas defasadas</span>`:''}${D.meta.gerado?`<span class="badge"><span class="dot"></span>Carga: ${D.meta.gerado}</span>`:''}${window.LOCAL_DATA?`<span class="badge good" title="Dados importados neste dispositivo pela tela Importar"><span class="dot"></span>Dados deste dispositivo</span>`:''}`;
 FILA = __FILA_INIT; CADASTRO = __CAD_INIT; VENDEDORES = __VEND_INIT;
+if(__PRIV_INIT) PRIV = {...PRIV, ...__PRIV_INIT, consentimentoFoto:{...(__PRIV_INIT.consentimentoFoto||{})}};
+if(window.FULL && window.FULL.equipe && mesclaEquipeRemota(window.FULL.equipe)) salvaVendedores();
+if(window.FULL && window.FULL.cadastroSocios){ for(const [k,v] of Object.entries(window.FULL.cadastroSocios)) if(!CADASTRO[k]) CADASTRO[k]=v; salvaCadastro(); }
+aplicaRetencao();
 renderIntel(); if(HAS_YOY) renderYoy(); renderFila(); renderGeral(); // intel/yoy populam badges
 go('geral');
 }
@@ -1778,6 +1915,7 @@ async function unlock(pw){
   window.__cadastro = (await idbGet('cadastro')) || {};
   window.__vendedores = (await idbGet('vendedores')) || [];
   window.__filaCfg = (await idbGet('filaCfg')) || {criterio:'ano', qtd:5};
+  window.__priv = (await idbGet('priv')) || null;
 }
 function getClub(){ try{ return localStorage.getItem('tv_clube')||'all'; }catch(e){ return 'all'; } }
 function applyClub(F, cod){
@@ -1936,7 +2074,10 @@ async function importFiles(files, base){
   const ults=stockAll.map(s=>s.ult).filter(Boolean).sort();
   const now=new Date();
   const meta={clubes:[...nomes].map(([cod,nome])=>({cod,nome})).sort((a,b)=>a.cod.localeCompare(b.cod)), pedidos_periodo:[datas[0],datas.at(-1)], extracao_estoque: ults.at(-1)||datas.at(-1), ref_pedidos:datas.at(-1), hoje:IMP.iso(now), gerado:now.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), gerado_ts:now.getTime(), anos:[...new Set(od.map(o=>+o.data.slice(0,4)))].sort(), origem:'importado no app'};
-  return {data:{meta, orders:od, promos:[...pm.values()], stock:stockAll, sections:secAll}, log};
+  const extra = {};
+  if(window.__equipePub) extra.equipe = window.__equipePub();
+  if(window.__cadastroPub) extra.cadastroSocios = window.__cadastroPub();
+  return {data:{meta, orders:od, promos:[...pm.values()], stock:stockAll, sections:secAll, ...extra}, log};
 }
 // nome completo do clube a partir do texto "4941 - SAMS CLUB RECIFE" dos pedidos
 const _pn=parsePedidosNested, _pf=parsePedidosFlat;
@@ -1977,6 +2118,7 @@ function openImport(){
       <button class="btn" id="btnDown">Baixar data.enc</button>
     </div>
     <div id="impMsg" class="small" style="margin-top:10px;min-height:18px"></div>
+    <p class="small muted" style="margin-top:8px">Ao publicar, vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções definidas em <b>Equipe › Privacidade e LGPD</b>.</p>
     <hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
     <details><summary>Como funciona "Publicar para a equipe"</summary><div class="small muted" style="margin-top:8px;line-height:1.6">
       O app criptografa os dados com a senha de acesso e envia o arquivo <code>data.enc</code> para o repositório <b>${REPO.owner}/${REPO.repo}</b> no GitHub, que hospeda este app. Em 1–2 minutos todos que abrirem o app verão os dados novos.<br>
