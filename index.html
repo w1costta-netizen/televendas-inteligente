@@ -1233,6 +1233,15 @@ async function salvaTelefone(ckey, tel){
   CADASTRO[ckey] = {...(CADASTRO[ckey]||{}), telefone:tel.trim(), atualizadoEm:new Date().toISOString(), por:vendedorNome()};
   await salvaCadastro(); renderFila();
 }
+async function semeiaVendedores(){
+  const ops = [...new Set(D.orders.map(o=>o.operador).filter(Boolean))].sort();
+  let mudou = false;
+  for(const op of ops){
+    if(!VENDEDORES.some(v=>v.nome===op || v.operador===op)){ VENDEDORES.push({nome:op, email:'', operador:op, origem:'planilha'}); mudou = true; }
+  }
+  if(mudou) await salvaVendedores();
+  return ops;
+}
 async function autoFila(){
   const meu = vendedorNome(); if(!meu) return;
   const cfg = window.__filaCfg || {criterio:'ano', qtd:5};
@@ -1281,19 +1290,34 @@ function cardTarefa(c, s, i){
 
 /* ---- render ---- */
 async function renderFila(){
+  const ops = await semeiaVendedores();
   await autoFila();
   // ---- minha lista (cartões) ----
   const meu = vendedorNome();
   const sel2 = $('#vEuSou2');
-  sel2.innerHTML = '<option value="">— selecione seu nome —</option>' + VENDEDORES.map(v=>`<option ${v.nome===meu?'selected':''}>${esc(v.nome)}</option>`).join('') + (meu&&!VENDEDORES.some(v=>v.nome===meu)?`<option selected>${esc(meu)}</option>`:'');
-  sel2.onchange = async ()=>{ try{ localStorage.setItem('tv_vend', sel2.value); }catch(e){} await renderFila(); };
+  sel2.innerHTML = '<option value="">— selecione seu nome —</option>'
+    + VENDEDORES.map(v=>`<option value="${esc(v.nome)}" ${v.nome===meu?'selected':''}>${esc(v.nome)}${v.origem==='planilha'?' (operador da planilha)':''}</option>`).join('')
+    + (meu&&!VENDEDORES.some(v=>v.nome===meu)?`<option selected>${esc(meu)}</option>`:'')
+    + '<option value="__novo">➕ Cadastrar outro nome…</option>';
+  sel2.onchange = async ()=>{
+    if(sel2.value==='__novo'){
+      const n=prompt('Digite seu nome ou matrícula (fica salvo neste aparelho):');
+      if(!n){ sel2.value = meu||''; return; }
+      const nome=n.trim();
+      if(!VENDEDORES.some(v=>v.nome===nome)){ VENDEDORES.push({nome, email:''}); await salvaVendedores(); }
+      try{ localStorage.setItem('tv_vend', nome); }catch(e){}
+    } else { try{ localStorage.setItem('tv_vend', sel2.value); }catch(e){} }
+    await renderFila();
+  };
   const meus = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu).map(([k])=>CLI.find(c=>c.id===k)).filter(Boolean)
     .map(c=>({c, s:situacao(c.id)})).sort((a,b)=>{
       const fa=['contatado','visita'].includes(a.s.st)?1:0, fb=['contatado','visita'].includes(b.s.st)?1:0;
       return fa-fb || (b.c.fatLYall||b.c.fat)-(a.c.fatLYall||a.c.fat); });
   const feitos = meus.filter(x=>['contatado','visita'].includes(x.s.st)).length;
   $('#progBar').style.width = meus.length? (feitos/meus.length*100)+'%' : '0%';
-  $('#progTxt').innerHTML = !meu ? 'Escolha seu nome acima para carregar sua lista.'
+  $('#progTxt').innerHTML = !meu ? (VENDEDORES.length
+      ? 'Escolha seu nome em <b>“Sou”</b> acima para carregar sua lista.'
+      : 'Nenhum operador identificado nos pedidos carregados. Clique em <b>“Sou”</b> → <b>➕ Cadastrar outro nome</b> para montar sua lista, ou cadastre a equipe em <b>Configuração do líder</b>.')
     : meus.length ? `<b>${feitos} de ${meus.length}</b> concluídos hoje · ligue na ordem, de cima para baixo. Registre também quando não conseguir falar.`
     : 'Nenhum sócio pendente no momento. Use “Puxar mais sócios” para carregar a próxima leva.';
   $('#minhaLista').innerHTML = meus.length ? meus.map((x,i)=>cardTarefa(x.c, x.s, i+1)).join('')
@@ -1306,12 +1330,13 @@ async function renderFila(){
 function renderFilaResto(){
   // config de vendedores
   $('#vendList').innerHTML = VENDEDORES.length
-    ? VENDEDORES.map((v,i)=>`<span class="badge" style="gap:8px">${esc(v.nome)}${v.email?` · <span class="muted">${esc(v.email)}</span>`:''} <a href="#" data-delv="${i}" style="color:var(--bad);text-decoration:none">✕</a></span>`).join('')
+    ? VENDEDORES.map((v,i)=>`<span class="badge" style="gap:8px">${esc(v.nome)}${v.origem==='planilha'?' <span class="tag">da planilha</span>':''}${v.email?` · <span class="muted">${esc(v.email)}</span>`:` · <a href="#" data-mailv="${i}" style="color:var(--accent)">add e-mail</a>`} <a href="#" data-delv="${i}" style="color:var(--bad);text-decoration:none">✕</a></span>`).join('')
     : '<span class="small muted">Nenhum vendedor cadastrado. Adicione para distribuir as listas.</span>';
   const sel=$('#vEuSou'), meuAtual=vendedorNome();
   sel.innerHTML='<option value="">— quem está usando —</option>'+VENDEDORES.map(v=>`<option ${v.nome===meuAtual?'selected':''}>${esc(v.nome)}</option>`).join('')+(meuAtual&&!VENDEDORES.some(v=>v.nome===meuAtual)?`<option selected>${esc(meuAtual)}</option>`:'');
   sel.onchange=()=>{ try{ localStorage.setItem('tv_vend', sel.value); }catch(e){} renderFila(); };
   $('#vendList').querySelectorAll('[data-delv]').forEach(a=>a.onclick=async e=>{ e.preventDefault(); VENDEDORES.splice(+a.dataset.delv,1); await salvaVendedores(); renderFila(); });
+  $('#vendList').querySelectorAll('[data-mailv]').forEach(a=>a.onclick=async e=>{ e.preventDefault(); const i=+a.dataset.mailv; const m=prompt(`E-mail de ${VENDEDORES[i].nome}:`, ''); if(m===null) return; VENDEDORES[i].email=m.trim(); await salvaVendedores(); renderFila(); });
 
   const porVend = new Map();
   for(const [ckey,f] of Object.entries(FILA)){
