@@ -193,6 +193,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <button data-v="intel">Inteligência <span class="n" id="nIntel"></span></button>
     <button data-v="result">Resultados</button>
     <button data-v="tarefas">Tarefas do vendedor <span class="n" id="nFila"></span></button>
+    <button data-v="equipe">Equipe</button>
   </nav>
 </header>
 
@@ -234,6 +235,24 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <span class="muted small" style="align-self:flex-end;padding-bottom:8px" id="cCount"></span>
   </div>
   <div class="card pad0"><div class="tbl-wrap"><table id="tCart"></table></div></div>
+</section>
+
+<!-- ================= EQUIPE ================= -->
+<section class="view" id="v-equipe">
+  <h2>Equipe e perfis</h2>
+  <p class="sub">Cadastro de vendedores e liderança. É aqui que o código de usuário da plataforma (ex.: <code>mvs000c</code>) ganha o nome real da pessoa — e esse nome passa a aparecer em todas as telas, listas e e-mails.</p>
+  <div class="grid kpis" id="kpisEq"></div>
+  <div class="card" style="margin-top:14px">
+    <h3>Quem está usando este aparelho</h3>
+    <div class="filters">
+      <label>Eu sou<select id="euSelect" style="min-width:260px"></select></label>
+      <button class="btn" id="eqNovo" style="align-self:flex-end">+ Nova pessoa</button>
+      <button class="btn" id="eqExp" style="align-self:flex-end">Exportar equipe (CSV)</button>
+    </div>
+    <p class="small muted" style="margin:0">A escolha fica salva neste aparelho e define qual lista aparece em <b>Tarefas do vendedor</b> e em nome de quem os contatos são registrados.</p>
+  </div>
+  <div id="semVinculo" style="margin-top:14px"></div>
+  <div class="card pad0" style="margin-top:14px"><div class="tbl-wrap" style="max-height:460px"><table id="tEquipe"></table></div></div>
 </section>
 
 <!-- ================= TAREFAS DO VENDEDOR ================= -->
@@ -866,7 +885,7 @@ function renderYoy(){
   renderYoyCli(); renderYoyIt();
   const vm=new Map();
   for(const o of CY){ if(!o.operador) continue; const r=vm.get(o.operador)||{op:o.operador,n:0,ok:0,fat:0,mw:0,cli:new Set()}; r.n++; if(OK.has(o.status)){ r.ok++; r.fat+=o.valor; if(o.margem_ped!=null) r.mw+=o.margem_ped*o.valor; r.cli.add(o.ckey);} vm.set(o.operador,r); }
-  table($('#tVend'),[{k:'op',l:'Operador',f:r=>`<b>${esc(r.op)}</b>`},{k:'n',l:'Pedidos',num:true,f:r=>`${r.ok}<span class="muted">/${r.n}</span>`},{k:'fat',l:'Faturado',num:true,f:r=>fmtR(r.fat),sort:true},{k:'conv',l:'Conversão',num:true,v:r=>r.ok/r.n,f:r=>fmtP(r.ok/r.n*100)},{k:'tk',l:'Ticket',num:true,v:r=>r.ok?r.fat/r.ok:0,f:r=>fmtR(r.ok?r.fat/r.ok:0)},{k:'mg',l:'Margem méd.',num:true,v:r=>r.fat?r.mw/r.fat:null,f:r=>r.fat?`<span style="${r.mw/r.fat<0?'color:var(--bad)':''}">${fmtP(r.mw/r.fat)}</span>`:'—'},{k:'cli',l:'Sócios',num:true,v:r=>r.cli.size}],[...vm.values()]);
+  table($('#tVend'),[{k:'op',l:'Vendedor',v:r=>nomeDe(r.op),f:r=>`<b>${esc(nomeDe(r.op))}</b>${nomeDe(r.op)!==r.op?`<div class="small muted">${esc(r.op)}</div>`:''}`},{k:'n',l:'Pedidos',num:true,f:r=>`${r.ok}<span class="muted">/${r.n}</span>`},{k:'fat',l:'Faturado',num:true,f:r=>fmtR(r.fat),sort:true},{k:'conv',l:'Conversão',num:true,v:r=>r.ok/r.n,f:r=>fmtP(r.ok/r.n*100)},{k:'tk',l:'Ticket',num:true,v:r=>r.ok?r.fat/r.ok:0,f:r=>fmtR(r.ok?r.fat/r.ok:0)},{k:'mg',l:'Margem méd.',num:true,v:r=>r.fat?r.mw/r.fat:null,f:r=>r.fat?`<span style="${r.mw/r.fat<0?'color:var(--bad)':''}">${fmtP(r.mw/r.fat)}</span>`:'—'},{k:'cli',l:'Sócios',num:true,v:r=>r.cli.size}],[...vm.values()]);
   $('#nYoy').textContent=CLI.filter(c=>c.yoy==='nao').length||'';
   const meusPend=Object.entries(FILA).filter(([k,f])=>f.vendedor===vendedorNome()&&!['contatado','visita'].includes(situacao(k).st)).length;
   $('#nFila').textContent=meusPend||'';
@@ -1003,7 +1022,7 @@ function renderResultados(){
   $('#resVendSub').innerHTML = vend.length? `${vend.length} operadores identificados · ${D.orders.filter(o=>!o.operador).length} pedidos sem vendedor no arquivo (formato antigo)`
     : '<span class="badge warn"><span class="dot"></span>Nenhum pedido com campo “Operador” — peça a exportação no formato novo para medir produtividade individual</span>';
   table($('#tProd2'),[
-    {k:'op',l:'Vendedor',f:r=>`<b>${esc(r.op)}</b><div class="small muted">${r.dias.size} dias com atividade</div>`},
+    {k:'op',l:'Vendedor',v:r=>nomeDe(r.op),f:r=>`<b>${esc(nomeDe(r.op))}</b><div class="small muted">${nomeDe(r.op)!==r.op?esc(r.op)+' · ':''}${r.dias.size} dias com atividade</div>`},
     {k:'fat',l:'Faturado',num:true,f:r=>fmtR(r.fat),sort:true},
     {k:'pd',l:'Pedidos/dia',num:true,v:r=>r.n/r.dias.size,f:r=>(r.n/r.dias.size).toFixed(1)},
     {k:'cd',l:'Sócios/dia',num:true,v:r=>r.cli.size/r.dias.size,f:r=>(r.cli.size/r.dias.size).toFixed(1)},
@@ -1101,6 +1120,115 @@ function exportaAcoes(){
   for(const a of ACOES){ const r=atribui(a); rows.push([a.quando,a.vendedor,a.clube,a.nome,a.contato===false?'não':(a.contato===true?'sim':''),ALERT_TIPOS[a.origem]||a.origem,a.resultado,a.motivoNaoCompra||'',a.motivoSemContato||'',CADASTRO[a.ckey]?.segmento||'',a.obs||'',r.n,r.valor.toFixed(2)]); }
   const csv='﻿'+rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='contatos-televendas.csv'; a.click();
+}
+
+/* ---------------------------------- equipe / perfil ---------------------------------- */
+const PERFIS = ['Vendedor','Líder','Gerente geral'];
+/* VENDEDORES guarda a equipe: {nome, usuario, email, telefone, perfil, clube, ativo, origem} */
+const pessoaPorUsuario = u => VENDEDORES.find(v=>v.usuario && u && v.usuario.toLowerCase()===String(u).toLowerCase());
+const nomeDe = u => (pessoaPorUsuario(u)?.nome) || u || '—';
+const souPessoa = () => VENDEDORES.find(v=>v.nome===vendedorNome()) || null;
+const souLider = () => ['Líder','Gerente geral'].includes(souPessoa()?.perfil);
+
+async function migraFila(antigo, novo){
+  if(antigo===novo) return;
+  let m=false;
+  for(const k of Object.keys(FILA)) if(FILA[k].vendedor===antigo){ FILA[k].vendedor=novo; m=true; }
+  for(const a of ACOES) if(a.vendedor===antigo){ a.vendedor=novo; m=true; }
+  if(m){ await salvaFila(); await saveAcoes(); }
+}
+
+function renderEquipe(){
+  const ops = [...new Set(D.orders.map(o=>o.operador).filter(Boolean))].sort();
+  const semVinculo = ops.filter(o=>!pessoaPorUsuario(o));
+  const eu = souPessoa();
+  $('#kpisEq').innerHTML=[
+    kpi('Pessoas cadastradas', VENDEDORES.length, `${VENDEDORES.filter(v=>v.perfil==='Vendedor').length} vendedores · ${VENDEDORES.filter(v=>v.perfil!=='Vendedor').length} liderança`),
+    kpi('Usuários nas planilhas', ops.length, semVinculo.length? `<span style="color:var(--bad)">${semVinculo.length} sem nome vinculado</span>` : 'todos vinculados'),
+    kpi('Com e-mail', VENDEDORES.filter(v=>v.email).length, 'recebem a lista automática'),
+    kpi('Eu sou', eu? esc(eu.nome) : '—', eu? `${esc(eu.perfil||'Vendedor')}${eu.usuario?` · usuário ${esc(eu.usuario)}`:''}` : 'selecione abaixo quem está usando'),
+  ].join('');
+
+  // quem está usando este aparelho
+  $('#euSelect').innerHTML = '<option value="">— selecione —</option>' +
+    VENDEDORES.map(v=>`<option value="${esc(v.nome)}" ${v.nome===vendedorNome()?'selected':''}>${esc(v.nome)}${v.perfil&&v.perfil!=='Vendedor'?` · ${esc(v.perfil)}`:''}</option>`).join('');
+  $('#euSelect').onchange=async()=>{ try{ localStorage.setItem('tv_vend', $('#euSelect').value); }catch(e){} renderEquipe(); renderFila(); };
+
+  // usuários da planilha sem pessoa
+  $('#semVinculo').innerHTML = semVinculo.length
+    ? `<div class="note"><b>${semVinculo.length} usuário(s) aparecem nos pedidos mas ainda não têm nome:</b> ${semVinculo.map(o=>`<span class="tag">${esc(o)}</span>`).join(' ')}
+        <div style="margin-top:8px">Clique em <b>Vincular</b> para dar o nome real de cada um — ele passa a aparecer em todas as telas no lugar do código.</div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${semVinculo.map(o=>`<button class="btn sm" data-vinc="${esc(o)}">Vincular ${esc(o)}</button>`).join('')}</div></div>`
+    : '';
+  $('#semVinculo').querySelectorAll('[data-vinc]').forEach(b=>b.onclick=()=>{
+    const u=b.dataset.vinc; const n=prompt(`Nome completo de quem usa o usuário "${u}":`); if(!n) return;
+    const ex=VENDEDORES.find(v=>v.nome===n.trim());
+    if(ex){ ex.usuario=u; } else { VENDEDORES.push({nome:n.trim(), usuario:u, email:'', telefone:'', perfil:'Vendedor', clube:'', ativo:true, origem:'planilha'}); }
+    salvaVendedores().then(()=>{ renderEquipe(); renderFila(); });
+  });
+
+  table($('#tEquipe'),[
+    {k:'nome',l:'Nome',f:v=>`<b>${esc(v.nome)}</b>${v.ativo===false?' <span class="tag warn">inativo</span>':''}`,sort:true},
+    {k:'usuario',l:'Usuário na plataforma',f:v=>v.usuario?`<span class="tag">${esc(v.usuario)}</span>`:'<span class="small muted">não vinculado</span>'},
+    {k:'perfil',l:'Perfil',f:v=>esc(v.perfil||'Vendedor')},
+    {k:'email',l:'E-mail',f:v=>v.email?esc(v.email):'<span class="small muted">—</span>'},
+    {k:'telefone',l:'Telefone',f:v=>v.telefone?esc(v.telefone):'<span class="small muted">—</span>'},
+    {k:'clube',l:'Clube',f:v=>esc(v.clube||'—')},
+    {k:'carga',l:'Na fila',num:true,v:v=>Object.values(FILA).filter(f=>f.vendedor===v.nome).length},
+    {k:'ac',l:'Contatos',num:true,v:v=>ACOES.filter(a=>a.vendedor===v.nome).length},
+    {k:'ed',l:'',f:v=>`<button class="btn sm" data-edp="${esc(v.nome)}">Editar</button> <button class="btn sm" data-delp="${esc(v.nome)}">✕</button>`},
+  ], VENDEDORES, {sort:'nome', asc:true});
+  $('#tEquipe').querySelectorAll('[data-edp]').forEach(b=>b.onclick=()=>openPessoa(VENDEDORES.find(v=>v.nome===b.dataset.edp)));
+  $('#tEquipe').querySelectorAll('[data-delp]').forEach(b=>b.onclick=async()=>{
+    if(!confirm(`Remover ${b.dataset.delp} da equipe? As listas e contatos já registrados em nome dele(a) continuam no histórico.`)) return;
+    VENDEDORES = VENDEDORES.filter(v=>v.nome!==b.dataset.delp); await salvaVendedores(); renderEquipe(); renderFila(); });
+}
+
+function openPessoa(v){
+  const novo = !v;
+  v = v || {nome:'', usuario:'', email:'', telefone:'', perfil:'Vendedor', clube:'', ativo:true};
+  const clubes = (D.meta.clubes||[]).map(c=>c.cod);
+  const opsLivres = [...new Set(D.orders.map(o=>o.operador).filter(Boolean))].sort();
+  document.body.insertAdjacentHTML('beforeend', `<div id="pBox" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px;overflow:auto">
+    <div class="card" style="width:min(560px,100%)">
+      <h3 style="margin-bottom:10px">${novo?'Nova pessoa':'Editar '+esc(v.nome)}</h3>
+      <div class="two">
+        <label class="small muted">Nome completo<input id="pNome" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.nome)}"></label>
+        <label class="small muted">Perfil<select id="pPerfil" class="btn" style="width:100%;margin:4px 0 10px">${PERFIS.map(x=>`<option ${x===v.perfil?'selected':''}>${x}</option>`).join('')}</select></label>
+      </div>
+      <label class="small muted">Usuário na plataforma (coluna “Operador” dos pedidos)
+        <select id="pUser" class="btn" style="width:100%;margin:4px 0 10px">
+          <option value="">— sem vínculo —</option>
+          ${opsLivres.map(o=>`<option ${o===v.usuario?'selected':''}>${esc(o)}</option>`).join('')}
+          ${v.usuario&&!opsLivres.includes(v.usuario)?`<option selected>${esc(v.usuario)}</option>`:''}
+        </select></label>
+      <div class="two">
+        <label class="small muted">E-mail<input id="pEmail" type="email" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.email||'')}"></label>
+        <label class="small muted">Telefone<input id="pTel" class="btn" style="width:100%;margin:4px 0 10px" value="${esc(v.telefone||'')}"></label>
+      </div>
+      <div class="two">
+        <label class="small muted">Clube<select id="pClube" class="btn" style="width:100%;margin:4px 0 10px"><option value="">todos</option>${clubes.map(c=>`<option ${c===v.clube?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
+        <label class="chk" style="padding-top:22px"><input type="checkbox" id="pAtivo" ${v.ativo!==false?'checked':''}> Ativo</label>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:6px"><button class="btn primary" id="pOk">Salvar</button><button class="btn" id="pCancel">Cancelar</button></div>
+    </div></div>`);
+  $('#pCancel').onclick=()=>$('#pBox').remove();
+  $('#pOk').onclick=async()=>{
+    const nome=$('#pNome').value.trim(); if(!nome){ alert('Informe o nome.'); return; }
+    const antigo=v.nome;
+    const dados={nome, usuario:$('#pUser').value.trim(), email:$('#pEmail').value.trim(), telefone:$('#pTel').value.trim(),
+      perfil:$('#pPerfil').value, clube:$('#pClube').value, ativo:$('#pAtivo').checked, origem:v.origem||'manual'};
+    if(novo){ if(VENDEDORES.some(x=>x.nome===nome)){ alert('Já existe alguém com esse nome.'); return; } VENDEDORES.push(dados); }
+    else { const i=VENDEDORES.findIndex(x=>x.nome===antigo); VENDEDORES[i]=dados; await migraFila(antigo, nome);
+      if(vendedorNome()===antigo){ try{ localStorage.setItem('tv_vend', nome); }catch(e){} } }
+    await salvaVendedores(); $('#pBox').remove(); renderEquipe(); renderFila();
+  };
+}
+function exportaEquipe(){
+  const rows=[['nome','usuario_plataforma','perfil','email','telefone','clube','ativo']];
+  for(const v of VENDEDORES) rows.push([v.nome, v.usuario||'', v.perfil||'Vendedor', v.email||'', v.telefone||'', v.clube||'', v.ativo===false?'não':'sim']);
+  const csv='﻿'+rows.map(r=>r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='equipe-televendas.csv'; a.click();
 }
 
 /* ---------------------------------- fila de contatos / cadência ---------------------------------- */
@@ -1237,7 +1365,7 @@ async function semeiaVendedores(){
   const ops = [...new Set(D.orders.map(o=>o.operador).filter(Boolean))].sort();
   let mudou = false;
   for(const op of ops){
-    if(!VENDEDORES.some(v=>v.nome===op || v.operador===op)){ VENDEDORES.push({nome:op, email:'', operador:op, origem:'planilha'}); mudou = true; }
+    if(!VENDEDORES.some(v=>v.nome===op || v.usuario===op)){ VENDEDORES.push({nome:op, usuario:op, email:'', telefone:'', perfil:'Vendedor', clube:'', ativo:true, origem:'planilha'}); mudou = true; }
   }
   if(mudou) await salvaVendedores();
   return ops;
@@ -1296,7 +1424,7 @@ async function renderFila(){
   const meu = vendedorNome();
   const sel2 = $('#vEuSou2');
   sel2.innerHTML = '<option value="">— selecione seu nome —</option>'
-    + VENDEDORES.map(v=>`<option value="${esc(v.nome)}" ${v.nome===meu?'selected':''}>${esc(v.nome)}${v.origem==='planilha'?' (operador da planilha)':''}</option>`).join('')
+    + VENDEDORES.filter(v=>v.ativo!==false).map(v=>`<option value="${esc(v.nome)}" ${v.nome===meu?'selected':''}>${esc(v.nome)}${v.usuario&&v.usuario!==v.nome?` · ${esc(v.usuario)}`:''}</option>`).join('')
     + (meu&&!VENDEDORES.some(v=>v.nome===meu)?`<option selected>${esc(meu)}</option>`:'')
     + '<option value="__novo">➕ Cadastrar outro nome…</option>';
   sel2.onchange = async ()=>{
@@ -1317,7 +1445,7 @@ async function renderFila(){
   $('#progBar').style.width = meus.length? (feitos/meus.length*100)+'%' : '0%';
   $('#progTxt').innerHTML = !meu ? (VENDEDORES.length
       ? 'Escolha seu nome em <b>“Sou”</b> acima para carregar sua lista.'
-      : 'Nenhum operador identificado nos pedidos carregados. Clique em <b>“Sou”</b> → <b>➕ Cadastrar outro nome</b> para montar sua lista, ou cadastre a equipe em <b>Configuração do líder</b>.')
+      : 'Nenhuma pessoa cadastrada. Vá na aba <b>Equipe</b> para cadastrar vendedores e líderes, ou use <b>“Sou”</b> → <b>➕ Cadastrar outro nome</b>.')
     : meus.length ? `<b>${feitos} de ${meus.length}</b> concluídos hoje · ligue na ordem, de cima para baixo. Registre também quando não conseguir falar.`
     : 'Nenhum sócio pendente no momento. Use “Puxar mais sócios” para carregar a próxima leva.';
   $('#minhaLista').innerHTML = meus.length ? meus.map((x,i)=>cardTarefa(x.c, x.s, i+1)).join('')
@@ -1487,7 +1615,7 @@ function exportaCadastro(){
 }
 
 /* ---------------------------------- navegação ---------------------------------- */
-function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila})[v](); window.scrollTo({top:0}); }
+function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
 document.addEventListener('click',e=>{ const k=e.target.closest('[data-go]'); if(k) go(k.dataset.go); const c=e.target.closest('[data-cli]'); if(c&&!e.target.closest('.drawer')) openClient(c.dataset.cli); });
 ['#cSearch','#cDias','#cSit','#cRisco'].forEach(s=>$(s).addEventListener('input',renderCarteira));
@@ -1503,6 +1631,8 @@ $('#fMais').onclick=async()=>{ window.__filaCfg={criterio:$('#fCrit').value||'an
   await salvaFila(); await renderFila(); };
 $('#fLimpar').onclick=limparConcluidos;
 $('#btnExpCad').onclick=exportaCadastro;
+$('#eqNovo').onclick=()=>openPessoa(null);
+$('#eqExp').onclick=exportaEquipe;
 ['#eSearch','#eAlert'].forEach(s=>$(s).addEventListener('input',renderProd));
 $('#themeBtn').onclick=()=>{const r=document.documentElement; const dark=matchMedia('(prefers-color-scheme:dark)').matches; const cur=r.dataset.theme||(dark?'dark':'light'); r.dataset.theme=cur==='dark'?'light':'dark';};
 
