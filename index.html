@@ -303,8 +303,9 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </div>
   <div class="card" style="margin-top:14px">
     <h3>Quando os sócios pedem — dia da semana × hora (nº de pedidos)</h3>
-    <div id="heat"></div>
-    <p class="small muted" style="margin:10px 0 0">Use para distribuir as ligações: horários com poucos pedidos recebidos são janelas melhores para prospecção ativa.</p>
+    <div id="heat" class="heat"></div>
+    <div class="legend" style="margin-top:10px"><span><i style="background:var(--s1);opacity:.2"></i>poucos pedidos</span><span><i style="background:var(--s1)"></i>muitos pedidos</span></div>
+    <p class="small muted" style="margin:6px 0 0">Cada célula é o nº de pedidos que entraram naquele dia da semana e hora. Serve para dois usos: reforçar a equipe nos picos de entrada e usar as janelas vazias para prospecção ativa (ligar para quem não comprou).</p>
   </div>
 </section>
 
