@@ -139,6 +139,29 @@ svg text{fill:var(--text-2);font-size:11px}
 .tag.promo{background:var(--good-bg);color:var(--good)} .tag.low{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
 body.modo-vendedor #kpisFila, body.modo-vendedor #tVisita, body.modo-vendedor .so-gerente{display:none!important}
 body.modo-vendedor nav.tabs button[data-v="geral"],body.modo-vendedor nav.tabs button[data-v="yoy"],body.modo-vendedor nav.tabs button[data-v="estoque"],body.modo-vendedor nav.tabs button[data-v="intel"],body.modo-vendedor nav.tabs button[data-v="result"],body.modo-vendedor nav.tabs button[data-v="equipe"]{display:none!important}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.vcard{border:1px solid var(--border);border-left:4px solid var(--border-2);border-radius:10px;padding:12px;background:var(--surface)}
+.vcard.good{border-left-color:var(--good)} .vcard.warn{border-left-color:var(--warn)} .vcard.bad{border-left-color:var(--bad)}
+.vcard .vtop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
+.vcard .vnum{font-size:19px;font-weight:700;letter-spacing:-.3px}
+.vcard .vlfl{font-size:13px;margin-top:2px}
+.vcard .vacao{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)}
+.vlista{margin:0;padding-left:20px;line-height:1.65}
+.vlista li{margin-bottom:10px}
+#vBarraLeg{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--text-2);margin-top:8px}
+#vBarraLeg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+@media(max-width:720px){
+  .wrap{padding:0 12px 40px}
+  .grid.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .kpi .v{font-size:21px}
+  .vgrid{grid-template-columns:1fr}
+  nav.tabs{padding-left:12px;padding-right:12px}
+  h2{font-size:17px}
+  .tbl-wrap{max-height:420px}
+  table{font-size:12px} th,td{padding:6px}
+  .filters{gap:6px} .filters input,.filters select{min-width:0;width:100%}
+  .filters label{flex:1 1 140px}
+}
 .tarefa{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:8px}
 .tarefa.feita{opacity:.55;background:var(--surface-2)}
 .tarefa .tnum{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800}
@@ -190,6 +213,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <button data-v="geral" class="active">Visão geral</button>
     <button data-v="carteira">Carteira de sócios <span class="n" id="nCart"></span></button>
     <button data-v="yoy">Ano × ano <span class="n" id="nYoy"></span></button>
+    <button data-v="vendas">Vendas</button>
     <button data-v="ofertas">Ofertas</button>
     <button data-v="estoque">Estoque & margem</button>
     <button data-v="intel">Inteligência <span class="n" id="nIntel"></span></button>
@@ -348,6 +372,40 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
       <div class="filters"><label>Situação<select id="yiSit"><option value="">Todos</option><option value="nao">Sem venda este ano</option><option value="queda">Queda &gt; 30%</option><option value="cresceu">Cresceu</option><option value="novo">Novo este ano</option></select></label></div>
       <div class="tbl-wrap" style="max-height:460px"><table id="tYoyIt"></table></div></div>
     <div class="card"><h3>Vendedores — ano atual</h3><p class="small muted" style="margin:0 0 8px">Disponível apenas nos pedidos do novo formato (campo Operador).</p><div class="tbl-wrap" style="max-height:460px"><table id="tVend"></table></div></div>
+  </div>
+</section>
+
+<!-- ================= VENDAS ================= -->
+<section class="view" id="v-vendas">
+  <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px">
+      <h2>Vendas</h2>
+      <p class="sub" id="vSub"></p>
+    </div>
+    <label id="vPeriodoWrap" style="font-size:12px;color:var(--text-3);font-weight:600;display:flex;flex-direction:column;gap:3px">Período
+      <select id="vPeriodo" style="padding:7px 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);min-width:180px"></select></label>
+  </div>
+  <div id="vendasBody">
+    <div class="grid kpis" id="kpisVendas"></div>
+    <div class="card" style="margin-top:14px">
+      <h3>Composição da receita por departamento</h3>
+      <div id="vBarra"></div><div id="vBarraLeg"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h3>O que fazer para melhorar a venda</h3>
+      <p class="small muted" style="margin:0 0 10px">Leitura automática dos números deste período — peso na receita, LFL e margem.</p>
+      <div id="vAnalise"></div>
+    </div>
+    <div id="vDeps" style="margin-top:6px"></div>
+    <div class="card" style="margin-top:14px">
+      <h3>Categorias</h3>
+      <p class="small muted" style="margin:0 0 10px">Ordenado por receita. A etiqueta resume peso × LFL × margem.</p>
+      <div class="tbl-wrap" style="max-height:460px"><table id="tCats"></table></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h3>Produtos <span class="muted small" id="vProdCount" style="font-weight:400"></span></h3>
+      <div class="tbl-wrap" style="max-height:460px"><table id="tProdVendas"></table></div>
+    </div>
   </div>
 </section>
 
@@ -1874,14 +1932,147 @@ function exportaCadastro(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='cadastro-socios-enriquecido.csv'; a.click();
 }
 
+/* ---------------------------------- vendas (venda real · LFL) ---------------------------------- */
+const temVendas = () => Array.isArray(D.vendas) && D.vendas.length>0;
+const fmtLFL = v => v==null ? '<span class="muted">—</span>'
+  : `<span style="color:${v<0?'var(--bad)':'var(--good)'};font-weight:700">${v>0?'+':''}${(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span>`;
+const seta = v => v==null ? '' : (v<0 ? '▼' : '▲');
+function vendaAtual(){
+  const sel = $('#vPeriodo') ? $('#vPeriodo').value : '';
+  return D.vendas.find(v=>v.rotulo===sel) || D.vendas[0];
+}
+/* classifica cada categoria/departamento em 4 quadrantes de ação */
+function classifica(r, receitaTotal){
+  const peso = receitaTotal ? r.receita/receitaTotal : 0;
+  const cresce = (r.lfl_receita||0) >= 0;
+  const margemOk = (r.pct_margem==null) || r.pct_margem >= 0;
+  if(peso>=0.05 && cresce && margemOk) return {k:'motor', t:'Motor', cls:'good', acao:'Proteger e abastecer — é o que sustenta o canal'};
+  if(peso>=0.05 && cresce && !margemOk) return {k:'volume', t:'Cresce sem margem', cls:'warn', acao:'Rever preço e mix: vende mais e perde dinheiro'};
+  if(peso>=0.05 && !cresce) return {k:'queda', t:'Queda relevante', cls:'bad', acao:'Prioridade máxima: peso alto e LFL negativo'};
+  if(cresce && margemOk) return {k:'aposta', t:'Em alta', cls:'good', acao:'Pequena mas crescendo com margem — ampliar'};
+  if(!margemOk) return {k:'drena', t:'Drena margem', cls:'bad', acao:'Pouca receita e margem negativa — avaliar sair'};
+  return {k:'atencao', t:'Atenção', cls:'warn', acao:'Acompanhar'};
+}
+function barraComp(itens, total){
+  return `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;gap:2px">${
+    itens.slice(0,8).map((r,i)=>`<div title="${esc(r.nome)}: ${fmtR(r.receita)}" style="width:${Math.max(r.receita/total*100,0.6)}%;background:var(--s${(i%8)+1})"></div>`).join('')}</div>`;
+}
+function renderVendas(){
+  if(!temVendas()){
+    $('#vendasBody').innerHTML = `<div class="card"><h3>Sem dados de venda</h3>
+      <p class="small muted">Importe os relatórios <b>(VENDAS 2.0)</b> — o acumulado do ano e o do mês. Eles trazem a venda real (não o pedido), com margem e LFL já calculados.</p></div>`;
+    $('#vPeriodoWrap').style.display='none'; return;
+  }
+  $('#vPeriodoWrap').style.display='';
+  const sel=$('#vPeriodo');
+  if(sel.options.length!==D.vendas.length){
+    const ordem=['Acumulado do ano'];
+    const lista=[...D.vendas].sort((a,b)=> (a.periodo==='ano'?-1:1)-(b.periodo==='ano'?-1:1));
+    sel.innerHTML=lista.map(v=>`<option>${esc(v.rotulo)}</option>`).join('');
+  }
+  const V=vendaAtual(), C=V.clube;
+  $('#vSub').innerHTML = `Venda <b>realizada</b> (não é pedido) do clube <b>${esc(C.nome)}</b> — ${esc(V.rotulo)}. <b>LFL</b> compara com o mesmo período do ano anterior na base comparável.`;
+
+  $('#kpisVendas').innerHTML=[
+    kpi('Receita', fmtR(C.receita), `${fmtLFL(C.lfl_receita)} LFL · saldo ${fmtR(C.saldo_receita)}`),
+    kpi('Margem', fmtR(C.margem), `${C.pct_margem!=null?`<b style="color:${C.pct_margem<0?'var(--bad)':'var(--good)'}">${(C.pct_margem*100).toFixed(2)}%</b> da receita`:''}`),
+    kpi('Sócios que compraram', fmtN(C.socios), `${fmtLFL(C.lfl_socios)} LFL`),
+    kpi('Ticket médio', fmtR(C.ticket), `${fmtLFL(C.lfl_ticket)} LFL`),
+    kpi('Gasto médio por sócio', fmtR(C.gasto), `${fmtLFL(C.lfl_gasto)} LFL`),
+    kpi('Volume', fmtN(C.volume), `${fmtLFL(C.lfl_volume)} LFL`),
+  ].join('');
+
+  const deps=[...V.departamentos].sort((a,b)=>b.receita-a.receita);
+  const tot=deps.reduce((a,r)=>a+r.receita,0)||1;
+  $('#vBarra').innerHTML = barraComp(deps,tot);
+  $('#vBarraLeg').innerHTML = deps.slice(0,8).map((r,i)=>`<span><i style="background:var(--s${(i%8)+1})"></i>${esc(r.nome)} ${fmtP(r.receita/tot*100)}</span>`).join('');
+
+  const cards = (lista, titulo, filtro) => {
+    const sel = lista.filter(filtro);
+    if(!sel.length) return '';
+    return `<h3 style="margin:16px 0 8px">${titulo} <span class="muted" style="font-weight:400">(${sel.length})</span></h3>
+      <div class="vgrid">${sel.map(r=>{
+        const c=classifica(r,tot);
+        return `<div class="vcard ${c.cls}">
+          <div class="vtop"><b>${esc(r.nome)}</b><span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span></div>
+          <div class="vnum">${fmtR(r.receita)} <span class="small muted">${fmtP(r.receita/tot*100)} do total</span></div>
+          <div class="vlfl">${seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita)} <span class="small muted">LFL receita</span>
+            ${r.pct_margem!=null?` · margem <b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`:''}</div>
+          <div class="small muted" style="margin-top:6px">${fmtN(r.socios)} sócios ${fmtLFL(r.lfl_socios)} · volume ${fmtN(r.volume)} ${fmtLFL(r.lfl_volume)}</div>
+          <div class="vacao">${c.acao}</div>
+        </div>`;}).join('')}</div>`;
+  };
+  const q=['motor','volume','queda','aposta','drena','atencao'];
+  $('#vDeps').innerHTML =
+      cards(deps,'🟢 Puxando a venda', r=>['motor','aposta'].includes(classifica(r,tot).k))
+    + cards(deps,'🔴 LFL negativo — exigem ação', r=>classifica(r,tot).k==='queda')
+    + cards(deps,'🟡 Crescem mas drenam margem', r=>['volume','drena'].includes(classifica(r,tot).k))
+    + cards(deps,'⚪ Demais', r=>classifica(r,tot).k==='atencao');
+
+  // categorias
+  const cats=[...V.categorias].sort((a,b)=>b.receita-a.receita);
+  const totC=cats.reduce((a,r)=>a+r.receita,0)||1;
+  table($('#tCats'),[
+    {k:'nome',l:'Categoria',f:r=>{const c=classifica(r,totC); return `<b>${esc(r.nome)}</b> <span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span>`;}},
+    {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
+    {k:'part',l:'% do total',num:true,v:r=>r.receita/totC,f:r=>fmtP(r.receita/totC*100)},
+    {k:'lfl_receita',l:'LFL receita',num:true,f:r=>`${seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita)}`},
+    {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
+    {k:'margem',l:'Margem R$',num:true,f:r=>fmtR(r.margem)},
+    {k:'socios',l:'Sócios',num:true,f:r=>`${fmtN(r.socios)} ${fmtLFL(r.lfl_socios)}`},
+    {k:'lfl_volume',l:'LFL volume',num:true,f:r=>fmtLFL(r.lfl_volume)},
+  ],cats);
+
+  // produtos
+  const prods=[...(V.produtos||[])].sort((a,b)=>b.receita-a.receita);
+  $('#vProdCount').textContent = prods.length? `${prods.length} produtos` : '';
+  table($('#tProdVendas'),[
+    {k:'nome',l:'Produto',f:r=>`${esc(r.nome)}<div class="small muted">${esc(r.cod||'')}</div>`},
+    {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
+    {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita)},
+    {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
+    {k:'socios',l:'Sócios',num:true,f:r=>fmtN(r.socios)},
+    {k:'volume',l:'Volume',num:true,f:r=>fmtN(r.volume)},
+  ],prods.slice(0,150));
+
+  $('#vAnalise').innerHTML = analiseVendas(V, deps, cats, tot);
+}
+
+/* leitura automática: o que fazer para melhorar a venda */
+function analiseVendas(V, deps, cats, tot){
+  const C=V.clube, pts=[];
+  const neg = deps.filter(r=>(r.pct_margem??0)<0).sort((a,b)=>a.margem-b.margem);
+  const queda = deps.filter(r=>(r.lfl_receita??0)<0 && r.receita/tot>=0.05).sort((a,b)=>a.lfl_receita-b.lfl_receita);
+  const sobe = deps.filter(r=>(r.lfl_receita??0)>0 && (r.pct_margem??0)>0).sort((a,b)=>b.lfl_receita-a.lfl_receita);
+  const topMg = cats.filter(r=>(r.pct_margem??0)>0.05).sort((a,b)=>b.pct_margem-a.pct_margem).slice(0,3);
+
+  if(C.pct_margem!=null && C.pct_margem<0)
+    pts.push(`<b>A margem do canal está negativa em ${(C.pct_margem*100).toFixed(2)}% (${fmtR(C.margem)}).</b> Cada real vendido hoje consome resultado. Antes de buscar volume, é preciso corrigir preço e mix — senão vender mais piora o número.`);
+  if(neg.length)
+    pts.push(`<b>Onde a margem sangra:</b> ${neg.slice(0,3).map(r=>`${esc(r.nome)} (${(r.pct_margem*100).toFixed(1)}%, ${fmtR(r.margem)})`).join(', ')}. Revisar as ofertas vigentes desses departamentos e conferir se há verba de fornecedor cobrindo o preço.`);
+  if(queda.length)
+    pts.push(`<b>Quedas que mais pesam:</b> ${queda.slice(0,3).map(r=>`${esc(r.nome)} ${fmtLFL(r.lfl_receita).replace(/<[^>]+>/g,'')} LFL`).join(', ')}. Como têm peso alto na receita, recuperar esses departamentos vale mais do que abrir categoria nova.`);
+  if(sobe.length)
+    pts.push(`<b>O que está funcionando:</b> ${sobe.slice(0,3).map(r=>`${esc(r.nome)} ${fmtLFL(r.lfl_receita).replace(/<[^>]+>/g,'')} LFL`).join(', ')} — crescendo com margem positiva. Ampliar a oferta desses itens na lista de ligação.`);
+  if(topMg.length)
+    pts.push(`<b>Categorias mais rentáveis:</b> ${topMg.map(r=>`${esc(r.nome)} (${(r.pct_margem*100).toFixed(1)}%)`).join(', ')}. Hoje representam pouco da receita — incluí-las no roteiro de cross-sell melhora a margem sem precisar vender mais volume.`);
+  if(C.lfl_socios!=null && C.lfl_volume!=null && C.lfl_socios>0 && C.lfl_volume<0)
+    pts.push(`<b>Mais sócios comprando menos:</b> sócios ${fmtLFL(C.lfl_socios).replace(/<[^>]+>/g,'')} e volume ${fmtLFL(C.lfl_volume).replace(/<[^>]+>/g,'')} LFL. A base está se pulverizando — o ganho está em aumentar a cesta de quem já compra (hoje ~1,2 item por pedido), não em captar mais um sócio pequeno.`);
+  if(C.lfl_ticket!=null && C.lfl_ticket<-0.1)
+    pts.push(`<b>Ticket caindo ${(C.lfl_ticket*100).toFixed(1)}% LFL.</b> Vale checar se as faixas de preço por quantidade estão sendo oferecidas: as ofertas exigem mínimo de 10 unidades na mediana, e pedidos abaixo disso perdem o preço promocional.`);
+  return pts.length ? `<ol class="vlista">${pts.map(p=>`<li>${p}</li>`).join('')}</ol>`
+                    : '<p class="small muted">Sem desvios relevantes no período.</p>';
+}
+
 /* ---------------------------------- navegação ---------------------------------- */
-function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe})[v](); window.scrollTo({top:0}); }
+function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe,vendas:renderVendas})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
 document.addEventListener('click',e=>{ const k=e.target.closest('[data-go]'); if(k) go(k.dataset.go); const c=e.target.closest('[data-cli]'); if(c&&!e.target.closest('.drawer')) openClient(c.dataset.cli); });
 ['#cSearch','#cDias','#cSit','#cRisco'].forEach(s=>$(s).addEventListener('input',renderCarteira));
 $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ REF=new Date($('#cRef').value+'T00:00:00'); CLI=buildClients(); renderCarteira(); });
 ['#oSearch','#oSecao','#oVig','#oEstq','#oComp','#oNeg'].forEach(s=>$(s).addEventListener('input',renderOfertas));
 ['#ySit','#ySearch'].forEach(s=>$(s).addEventListener('input',renderYoyCli)); $('#yiSit').addEventListener('input',renderYoyIt);
+$('#vPeriodo').addEventListener('change',renderVendas);
 $('#vAdd').onclick=async()=>{ const n=$('#vNome').value.trim(); if(!n) return; VENDEDORES.push({nome:n, email:$('#vEmail').value.trim()}); await salvaVendedores(); $('#vNome').value=''; $('#vEmail').value=''; renderFila(); };
 $('#fGerar').onclick=()=>gerarFila($('#fCrit').value, +$('#fQtd').value||5);
 $('#fMais').onclick=async()=>{ window.__filaCfg={criterio:$('#fCrit').value||'ano', qtd:(+$('#fQtd').value||5)}; await idbSet('filaCfg', window.__filaCfg);
@@ -1996,7 +2187,7 @@ function applyClub(F, cod){
   const clubes = F.meta.clubes || [{cod:'', nome:F.meta.clube||''}];
   if(cod!=='all' && !clubes.some(c=>c.cod===cod)) cod='all';
   const all = cod==='all';
-  const D = {meta:{...F.meta}};
+  const D = {meta:{...F.meta}, vendas:F.vendas||[], prioridades:F.prioridades};
   D.meta.clube_nome = all ? (clubes.length>1 ? `Todos os clubes (${clubes.length})` : clubes[0].nome) : (clubes.find(c=>c.cod===cod)?.nome||cod);
   const inClub = x => all || x.clube===cod || x.clube==null;
   D.orders = F.orders.filter(inClub);
