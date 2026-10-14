@@ -139,11 +139,18 @@ svg text{fill:var(--text-2);font-size:11px}
 .tag.promo{background:var(--good-bg);color:var(--good)} .tag.low{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
 body.modo-vendedor #kpisFila, body.modo-vendedor #tVisita, body.modo-vendedor .so-gerente{display:none!important}
 body.modo-vendedor nav.tabs button[data-v="geral"],body.modo-vendedor nav.tabs button[data-v="yoy"],body.modo-vendedor nav.tabs button[data-v="estoque"],body.modo-vendedor nav.tabs button[data-v="intel"],body.modo-vendedor nav.tabs button[data-v="result"],body.modo-vendedor nav.tabs button[data-v="equipe"]{display:none!important}
-.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
-.vcard{border:1px solid var(--border);border-left:4px solid var(--border-2);border-radius:10px;padding:12px;background:var(--surface)}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:8px}
+.vbloco{margin-bottom:16px}
+.vbloco h3{margin:0 0 2px}
+.vsub{margin:0 0 8px}
+h3.veixo{font-size:13px;letter-spacing:.3px;color:var(--text);border-bottom:2px solid var(--border);padding-bottom:6px;margin:18px 0 12px}
+.vcard .vpeso{font-size:11px;font-weight:700;color:var(--text-3);background:var(--surface-2);padding:1px 6px;border-radius:5px;white-space:nowrap}
+.vcard .vnum.good{color:var(--good)} .vcard .vnum.bad{color:var(--bad)}
+.vcard .vmini{margin-top:8px;padding-top:7px;border-top:1px dashed var(--border);font-size:11.5px;color:var(--text-3)}
+.vcard{border:1px solid var(--border);border-left:4px solid var(--border-2);border-radius:9px;padding:10px 11px;background:var(--surface)}
 .vcard.good{border-left-color:var(--good)} .vcard.warn{border-left-color:var(--warn)} .vcard.bad{border-left-color:var(--bad)}
-.vcard .vtop{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px}
-.vcard .vnum{font-size:19px;font-weight:700;letter-spacing:-.3px}
+.vcard .vtop{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:5px;font-size:13.5px}
+.vcard .vnum{font-size:17px;font-weight:700;letter-spacing:-.3px;line-height:1.25}
 .vcard .vlfl{font-size:13px;margin-top:2px}
 .vcard .vacao{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)}
 .vlista{margin:0;padding-left:20px;line-height:1.65}
@@ -151,10 +158,10 @@ body.modo-vendedor nav.tabs button[data-v="geral"],body.modo-vendedor nav.tabs b
 #vBarraLeg{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--text-2);margin-top:8px}
 #vBarraLeg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 @media(max-width:720px){
+  .vgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
   .wrap{padding:0 12px 40px}
   .grid.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
   .kpi .v{font-size:21px}
-  .vgrid{grid-template-columns:1fr}
   nav.tabs{padding-left:12px;padding-right:12px}
   h2{font-size:17px}
   .tbl-wrap{max-height:420px}
@@ -1994,27 +2001,41 @@ function renderVendas(){
   $('#vBarra').innerHTML = barraComp(deps,tot);
   $('#vBarraLeg').innerHTML = deps.slice(0,8).map((r,i)=>`<span><i style="background:var(--s${(i%8)+1})"></i>${esc(r.nome)} ${fmtP(r.receita/tot*100)}</span>`).join('');
 
-  const cards = (lista, titulo, filtro) => {
-    const sel = lista.filter(filtro);
-    if(!sel.length) return '';
-    return `<h3 style="margin:16px 0 8px">${titulo} <span class="muted" style="font-weight:400">(${sel.length})</span></h3>
-      <div class="vgrid">${sel.map(r=>{
-        const c=classifica(r,tot);
-        return `<div class="vcard ${c.cls}">
-          <div class="vtop"><b>${esc(r.nome)}</b><span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span></div>
-          <div class="vnum">${fmtR(r.receita)} <span class="small muted">${fmtP(r.receita/tot*100)} do total</span></div>
-          <div class="vlfl">${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)} <span class="small muted">LFL</span> · <span class="small muted">saldo</span> ${fmtSaldo(r.saldo_receita)}
-            ${r.pct_margem!=null?` · margem <b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`:''}</div>
-          <div class="small muted" style="margin-top:6px">${fmtN(r.socios)} sócios ${fmtLFL(r.lfl_socios)} · volume ${fmtN(r.volume)} ${fmtLFL(r.lfl_volume)}</div>
-          <div class="vacao">${c.acao}</div>
-        </div>`;}).join('')}</div>`;
+  const cardDep = (r, modo) => {
+    const peso = tot? r.receita/tot*100 : 0;
+    const pos = modo==='venda' ? (r.saldo_receita??0)>=0 : (r.margem??0)>=0;
+    const cls = pos ? 'good' : 'bad';
+    const destaque = modo==='venda'
+      ? `<div class="vnum ${cls}">${fmtSaldo(r.saldo_receita)}</div>
+         <div class="small muted">em vendas vs ano anterior${semBase(r)?' · <b>não vendia antes</b>':` · ${fmtLFL(r.lfl_receita,r)} LFL`}</div>`
+      : `<div class="vnum ${cls}">${fmtSaldo(r.margem)}</div>
+         <div class="small muted">de margem${r.pct_margem!=null?` · <b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b> da receita`:''}</div>`;
+    return `<div class="vcard ${cls}">
+      <div class="vtop"><b>${esc(r.nome)}</b><span class="vpeso">${peso.toFixed(1)}%</span></div>
+      ${destaque}
+      <div class="vmini">receita ${fmtR(r.receita)} · ${fmtN(r.socios)} sócios · vol. ${fmtN(r.volume)}</div>
+    </div>`;
   };
-  const q=['motor','volume','queda','aposta','drena','atencao'];
+  const bloco = (titulo, sub, lista, modo) => !lista.length ? '' :
+    `<div class="vbloco"><h3>${titulo} <span class="muted" style="font-weight:400">(${lista.length})</span></h3>
+     <p class="small muted vsub">${sub}</p>
+     <div class="vgrid">${lista.map(r=>cardDep(r,modo)).join('')}</div></div>`;
+
+  const vendaPos = deps.filter(r=>(r.saldo_receita??0)>0).sort((a,b)=>b.saldo_receita-a.saldo_receita);
+  const vendaNeg = deps.filter(r=>(r.saldo_receita??0)<0).sort((a,b)=>a.saldo_receita-b.saldo_receita);
+  const mgPos    = deps.filter(r=>(r.margem??0)>0).sort((a,b)=>b.margem-a.margem);
+  const mgNeg    = deps.filter(r=>(r.margem??0)<0).sort((a,b)=>a.margem-b.margem);
+  const soma = l => l.reduce((a,r)=>a+(r.saldo_receita||0),0);
+  const somaMg = l => l.reduce((a,r)=>a+(r.margem||0),0);
+
   $('#vDeps').innerHTML =
-      cards(deps,'🟢 Puxando a venda', r=>['motor','aposta'].includes(classifica(r,tot).k))
-    + cards(deps,'🔴 LFL negativo — exigem ação', r=>classifica(r,tot).k==='queda')
-    + cards(deps,'🟡 Crescem mas drenam margem', r=>['volume','drena'].includes(classifica(r,tot).k))
-    + cards(deps,'⚪ Demais', r=>classifica(r,tot).k==='atencao');
+      `<h3 class="veixo">Venda — quanto cada departamento ganhou ou perdeu em relação ao ano anterior</h3>`
+    + bloco('🟢 Venderam mais', `Somam ${fmtR(soma(vendaPos))} a mais que no mesmo período do ano anterior.`, vendaPos, 'venda')
+    + bloco('🔴 Venderam menos', `Somam ${fmtR(Math.abs(soma(vendaNeg)))} a menos — é aqui que a receita foi perdida.`, vendaNeg, 'venda')
+    + `<h3 class="veixo">Margem — quanto cada departamento gerou ou consumiu de resultado</h3>`
+    + bloco('🟢 Margem positiva', `Geraram ${fmtR(somaMg(mgPos))} de margem no período.`, mgPos, 'margem')
+    + bloco('🔴 Margem negativa', `Consumiram ${fmtR(Math.abs(somaMg(mgNeg)))} — vendem abaixo do custo.`, mgNeg, 'margem');
+
 
   // categorias
   const cats=[...V.categorias].sort((a,b)=>b.receita-a.receita);
