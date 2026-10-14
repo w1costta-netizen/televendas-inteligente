@@ -721,7 +721,7 @@ function renderCarteira(){
 function openClient(id){
   const c = cliById().get(id); if(!c) return;
   const promoItens = c.itens.filter(i=>i.promo), lowItens=c.itens.filter(i=>i.n>0&&i.estoque!=null&&i.estoque<=0);
-  $('#dhead').innerHTML = `<h2>${esc(c.nome)} <button class="btn primary sm" id="btnAcaoTopo" style="margin-left:10px;vertical-align:middle">☎ Registrar tentativa de contato</button></h2><div class="small muted">Sócio nº ${c.num} · ${riskHtml(c)} · ${c.nOk} pedidos faturados de ${c.n}</div>`;
+  $('#dhead').innerHTML = `<h2>${esc(c.nome)} <button class="btn primary sm" id="btnAcaoTopo" style="margin-left:10px;vertical-align:middle">☎ Registrar tentativa de contato</button></h2><div class="small muted">${(()=>{const cd=CADASTRO[c.id]||{}; const t=cd.telefone; return t?`<a href="tel:${telLimpo(t)}" style="font-weight:700">☎ ${esc(t)}</a> · <a href="https://wa.me/${telWa(t)}" target="_blank" rel="noopener">WhatsApp</a>${cd.segmento?` · <span class="tag">${esc(cd.segmento)}</span>`:''}${cd.email?` · ${esc(cd.email.toLowerCase())}`:''}<br>`:'';})()}Sócio nº ${c.num} · ${riskHtml(c)} · ${c.nOk} pedidos faturados de ${c.n}</div>`;
   const script = buildScript(c, promoItens, lowItens);
   $('#dbody').innerHTML = `
     <div class="grid kpis" style="margin-bottom:14px">
@@ -1238,7 +1238,15 @@ function mesclaEquipeRemota(remota){
   for(const r of remota){
     const i = VENDEDORES.findIndex(v=>v.nome===r.nome || (r.usuario && v.usuario===r.usuario));
     if(i<0){ VENDEDORES.push({...r, ativo:r.ativo!==false}); mudou=true; }
-    else { for(const [k,val] of Object.entries(r)) if(VENDEDORES[i][k]===undefined || VENDEDORES[i][k]==='' ){ VENDEDORES[i][k]=val; mudou=true; } }
+    else {
+      const atual=VENDEDORES[i];
+      // nome auto-gerado a partir do login: adota o nome real que veio na publicação
+      if(r.nome && atual.usuario && atual.nome===atual.usuario && r.nome!==atual.nome){
+        migraFila(atual.nome, r.nome); if(vendedorNome()===atual.nome){ try{ localStorage.setItem('tv_vend', r.nome); }catch(e){} }
+        atual.nome=r.nome; mudou=true;
+      }
+      for(const [k,val] of Object.entries(r)) if(atual[k]===undefined || atual[k]===''){ atual[k]=val; mudou=true; }
+    }
   }
   return mudou;
 }
@@ -2463,7 +2471,18 @@ async function encryptJson(obj,pw){ const salt=crypto.getRandomValues(new Uint8A
   const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']); const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt']);
   const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(JSON.stringify(obj)))); return {v:2,salt:b64e(salt),iv:b64e(iv),ct:b64e(ct)}; }
 async function decryptBlob(j,pw){ const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']); const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(j.salt),iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']); return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(j.iv)},key,b64(j.ct)))); }
-function idb(){ return new Promise((res,rej)=>{ const abre=(v)=>{ const r = v? indexedDB.open('tv',v) : indexedDB.open('tv'); r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); }; r.onsuccess=()=>{ const d=r.result;   if(d.objectStoreNames.contains('kv')) return res(d);   const nv=d.version+1; d.close(); abre(nv); }; r.onerror=()=>rej(r.error); }; abre(1); }); }
+let _dbConn=null;
+function idb(){ if(_dbConn) return _dbConn;
+  _dbConn = new Promise((res,rej)=>{
+    const abre=(v)=>{ const r = v? indexedDB.open('tv',v) : indexedDB.open('tv');
+      r.onupgradeneeded=()=>{ const d=r.result; if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv'); };
+      r.onsuccess=()=>{ const d=r.result;
+        if(d.objectStoreNames.contains('kv')){ d.onversionchange=()=>{ d.close(); _dbConn=null; }; return res(d); }
+        const nv=d.version+1; d.close(); abre(nv); };
+      r.onblocked=()=>{ _dbConn=null; rej(new Error('banco local em uso por outra aba')); };
+      r.onerror=()=>{ _dbConn=null; rej(r.error); }; };
+    abre(1); });
+  return _dbConn; }
 async function idbGet(k){ try{ const d=await idb(); return await new Promise((res,rej)=>{ const t=d.transaction('kv').objectStore('kv').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>rej(t.error); }); }catch(e){ return null; } }
 async function idbSet(k,v){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').put(v,k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível salvar localmente:', e && e.message); } }
 async function idbDel(k){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').delete(k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível apagar localmente:', e && e.message); } }
