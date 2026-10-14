@@ -267,7 +267,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <div class="filters">
     <label>Buscar<input type="search" id="cSearch" placeholder="Nome ou nº do sócio"></label>
     <label>Dias sem comprar<select id="cDias"><option value="0">Todos</option><option value="7">≥ 7 dias</option><option value="14">≥ 14 dias</option><option value="21">≥ 21 dias</option></select></label>
-    <label>Situação<select id="cSit"><option value="">Todas</option><option value="ativo">Com pedido faturado</option><option value="perdido">Sem nenhum faturado</option><option value="atrasado">Recompra atrasada</option><option value="nao">Comprou ano anterior, não voltou</option></select></label>
+    <label>Situação<select id="cSit"><option value="">Todas</option><option value="ativo">Com pedido faturado</option><option value="perdido">Sem nenhum faturado</option><option value="atrasado">Recompra atrasada</option><option value="nao">Sem compra no período selecionado</option></select></label>
     <label>Risco<select id="cRisco"><option value="">Todos</option><option value="alto">Alto</option><option value="medio">Médio</option><option value="baixo">Baixo</option></select></label>
     <label>Data de referência<input type="date" id="cRef"></label>
     <span class="muted small" style="align-self:flex-end;padding-bottom:8px" id="cCount"></span>
@@ -358,7 +358,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <div id="vendList" style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 14px"></div>
     <div class="filters" style="border-top:1px solid var(--border);padding-top:12px">
       <label>Quem entra na lista<select id="fCrit">
-        <option value="ano">Comprou no ano passado e ainda não comprou este ano</option>
+        <option value="ano">Sem compra no período selecionado (comprou no anterior)</option>
         <option value="mes">Sem comprar há 30+ dias</option>
         <option value="60">Sem comprar há 60+ dias</option>
         <option value="90">Sem comprar há 90+ dias</option>
@@ -402,13 +402,13 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </div>
   <div class="card" style="margin-top:14px">
     <h3>Sócios — quem comprou no ano anterior e como está agora</h3>
-    <div class="filters"><label>Situação<select id="ySit"><option value="">Todas</option><option value="nao">Não voltou este ano</option><option value="queda">Queda &gt; 30%</option><option value="cresceu">Cresceu</option><option value="novo">Novo este ano</option></select></label>
+    <div class="filters"><label>Situação<select id="ySit"><option value="">Todas</option><option value="nao">Sem compra no período</option><option value="queda">Queda &gt; 30%</option><option value="cresceu">Cresceu</option><option value="novo">Novo este ano</option></select></label>
       <label>Buscar<input type="search" id="ySearch" placeholder="Nome do sócio"></label><span class="muted small" style="align-self:flex-end;padding-bottom:8px" id="yCount"></span></div>
     <div class="tbl-wrap" style="max-height:460px"><table id="tYoyCli"></table></div>
   </div>
   <div class="grid row11" style="margin-top:14px">
     <div class="card"><h3>Itens — vendidos no ano anterior × ano atual</h3>
-      <div class="filters"><label>Situação<select id="yiSit"><option value="">Todos</option><option value="nao">Sem venda este ano</option><option value="queda">Queda &gt; 30%</option><option value="cresceu">Cresceu</option><option value="novo">Novo este ano</option></select></label></div>
+      <div class="filters"><label>Situação<select id="yiSit"><option value="">Todos</option><option value="nao">Sem venda no período</option><option value="queda">Queda &gt; 30%</option><option value="cresceu">Cresceu</option><option value="novo">Novo este ano</option></select></label></div>
       <div class="tbl-wrap" style="max-height:460px"><table id="tYoyIt"></table></div></div>
     <div class="card"><h3>Vendedores — ano atual</h3><p class="small muted" style="margin:0 0 8px">Disponível apenas nos pedidos do novo formato (campo Operador).</p><div class="tbl-wrap" style="max-height:460px"><table id="tVend"></table></div></div>
   </div>
@@ -583,7 +583,7 @@ function periodosDisponiveis(){
   return out;
 }
 function periodoAtual(){ try{ return localStorage.getItem('tv_periodo')||'ano'; }catch(e){ return 'ano'; } }
-let ANO, ANT, CY, MD0, MD1, LYALL, LY, CY_CLUBS, ALL_CLUBS, YOY_EXCL, HAS_YOY, PERIODO_ROT, CY_SET, LY_SET, LYALL_SET;
+let ANO, ANT, CY, MD0, MD1, LYALL, LY, CY_CLUBS, ALL_CLUBS, YOY_EXCL, HAS_YOY, PERIODO_ROT, CY_SET, LY_SET, LYALL_SET, ROT_ATUAL, ROT_ANT;
 function aplicaPeriodo(){
   const sel = periodoAtual();
   if(sel==='ano'){
@@ -592,11 +592,13 @@ function aplicaPeriodo(){
     MD0 = CY.length? CY.map(md).sort()[0] : '01-01';
     MD1 = CY.length? CY.map(md).sort().at(-1) : '12-31';
     PERIODO_ROT = `${ANO} (${MD0.split('-').reverse().join('/')} a ${MD1.split('-').reverse().join('/')})`;
+    ROT_ATUAL = String(ANO); ROT_ANT = String(ANT);
   } else {
     const [y,n] = sel.split('-'); ANO = +y; ANT = ANO-1;
     CY = D.orders.filter(o=>o.data.slice(0,7)===sel);
     MD0 = `${n}-01`; MD1 = `${n}-31`;
     PERIODO_ROT = `${MESES_NOME[+n-1]}/${y}`;
+    ROT_ATUAL = PERIODO_ROT; ROT_ANT = `${MESES_NOME[+n-1]}/${ANT}`;
   }
   CY_CLUBS = new Set(CY.map(o=>o.clube));
   ALL_CLUBS = new Set(D.orders.map(o=>o.clube));
@@ -609,8 +611,10 @@ function aplicaPeriodo(){
   LYALL_SET = new Set(LYALL.map(o=>o.pedido));
 }
 aplicaPeriodo();
+const PER_CURTO = () => ROT_ATUAL;
+const PER_ANT = () => ROT_ANT;
 const pct = (a,b) => (b? (a/b-1)*100 : null);
-const deltaHtml = (a,b) => { const d=pct(a,b); if(d==null) return '<span class="muted">sem base</span>'; const c=d<0?'var(--bad)':'var(--good)'; return `<span style="color:${c};font-weight:700">${d>0?'+':''}${d.toLocaleString('pt-BR',{maximumFractionDigits:0})}%</span> vs ${ANT}`; };
+const deltaHtml = (a,b) => { const d=pct(a,b); if(d==null) return '<span class="muted">sem base</span>'; const c=d<0?'var(--bad)':'var(--good)'; return `<span style="color:${c};font-weight:700">${d>0?'+':''}${d.toLocaleString('pt-BR',{maximumFractionDigits:0})}%</span> vs ${PER_ANT()}`; };
 const HOJE = pd(D.meta.hoje);
 let REF = pd(D.meta.ref_pedidos);   // data de referência p/ "dias sem comprar"
 
@@ -685,13 +689,13 @@ function renderGeral(){
   const conv = ok.length/o.length*100;
   const lok=LY.filter(x=>OK.has(x.status)), lfat=sum(lok,x=>x.valor), lvc=sum(LY.filter(x=>x.status==='CANCELADO'),x=>x.valor), lvr=sum(LY.filter(x=>x.status==='REJEITADO'),x=>x.valor);
   $('#v-geral h2').textContent = `Visão geral — ${PERIODO_ROT}`;
-  $('#v-geral .sub').innerHTML = HAS_YOY ? `Comparado com o <b>mesmo período de ${ANT}</b>. Clique em qualquer alerta ou indicador para abrir a lista detalhada.` : `Sem pedidos de ${ANT} para comparar neste clube. Clique em qualquer alerta ou indicador para abrir a lista.`;
+  $('#v-geral .sub').innerHTML = HAS_YOY ? `Comparado com <b>${PER_ANT()}</b>. Clique em qualquer alerta ou indicador para abrir a lista detalhada.` : `Sem pedidos de ${ANT} para comparar neste clube. Clique em qualquer alerta ou indicador para abrir a lista.`;
   $('#kpisGeral').innerHTML = [
     kpi('Faturado', fmtR(fat), HAS_YOY? deltaHtml(fat,lfat)+` · ${ok.length} pedidos` : `${ok.length} pedidos · ticket médio ${fmtR(fat/ok.length)}`),
     kpi('Cancelado', fmtR(vc), (HAS_YOY? deltaHtml(vc,lvc)+' · ':'')+`${canc.length} pedidos`, 'intel'),
     kpi('Rejeitado', fmtR(vr), (HAS_YOY? deltaHtml(vr,lvr)+' · ':'')+`${rej.length} pedidos`, 'intel'),
-    kpi('Conversão de pedidos', fmtP(conv), HAS_YOY? `${ANT}: ${fmtP(lok.length/LY.length*100)} · ${ok.length} de ${o.length} pedidos` : `${ok.length} de ${o.length} pedidos viraram venda`),
-    kpi(`Sócios com compra em ${PERIODO_ROT.split(' ')[0]}`, CLI.filter(c=>c.fatCY>0).length, HAS_YOY? `${ANT} mesmo período: ${CLI.filter(c=>c.fatLY>0).length} · <span style="color:var(--bad)">${CLI.filter(c=>c.yoy==='nao').length} não voltaram</span>` : `${CLI.filter(c=>!c.nOk).length} só cancel./rejeit.`, 'yoy'),
+    kpi('Conversão de pedidos', fmtP(conv), HAS_YOY? `${PER_ANT()}: ${fmtP(lok.length/LY.length*100)} · ${ok.length} de ${o.length} pedidos` : `${ok.length} de ${o.length} pedidos viraram venda`),
+    kpi(`Sócios com compra em ${PER_CURTO()}`, CLI.filter(c=>c.fatCY>0).length, HAS_YOY? `${PER_ANT()}: ${CLI.filter(c=>c.fatLY>0).length} · <span style="color:var(--bad)">${CLI.filter(c=>c.yoy==='nao').length} não voltaram</span>` : `${CLI.filter(c=>!c.nOk).length} só cancel./rejeit.`, 'yoy'),
     kpi('Risco alto de perda', CLI.filter(c=>c.risco==='alto').length, `sócios · ${fmtR(sum(CLI.filter(c=>c.risco==='alto'),c=>c.fat))} faturados no histórico todo`, 'intel','')
   ].join('');
   // chart dias
@@ -703,9 +707,9 @@ function renderGeral(){
   const vig = D.promos.filter(p=>isVig(p));
   const nao=CLI.filter(c=>c.yoy==='nao'), itNao=HAS_YOY? yoyItems().filter(x=>x.st==='nao') : [];
   const alerts = [
-    ...(HAS_YOY?[{c:'bad', ic:'↩', b:`${nao.length} sócios compraram no mesmo período de ${ANT} e não compraram em ${PERIODO_ROT.split(' ')[0]}`, s:`${fmtR(sum(nao,c=>c.fatLYall))} faturados com eles no ano anterior — lista de reativação`, go:'yoy', set:()=>{$('#ySit').value='nao'}},
-      {c:'warn', ic:'▤', b:`${itNao.length} itens vendidos no mesmo período de ${ANT} e sem venda agora`, s:`${fmtR(sum(itNao,x=>x.lyV))} no mesmo período do ano anterior`, go:'yoy', set:()=>{$('#yiSit').value='nao'}},
-      {c:'warn', ic:'▼', b:`${CLI.filter(c=>c.yoy==='queda').length} sócios com queda > 30% vs ${ANT}`, s:'Comprando menos que no mesmo período do ano passado', go:'yoy', set:()=>{$('#ySit').value='queda'}}]:[]),
+    ...(HAS_YOY?[{c:'bad', ic:'↩', b:`${nao.length} sócios compraram em ${PER_ANT()} e não compraram em ${PER_CURTO()}`, s:`${fmtR(sum(nao,c=>c.fatLYall))} faturados com eles no ano anterior — lista de reativação`, go:'yoy', set:()=>{$('#ySit').value='nao'}},
+      {c:'warn', ic:'▤', b:`${itNao.length} itens vendidos em ${PER_ANT()} e sem venda em ${PER_CURTO()}`, s:`${fmtR(sum(itNao,x=>x.lyV))} no mesmo período do ano anterior`, go:'yoy', set:()=>{$('#yiSit').value='nao'}},
+      {c:'warn', ic:'▼', b:`${CLI.filter(c=>c.yoy==='queda').length} sócios com queda > 30% vs ${PER_ANT()}`, s:'Comprando menos que no mesmo período do ano passado', go:'yoy', set:()=>{$('#ySit').value='queda'}}]:[]),
     {c:'bad', ic:'☎', b:`${CLI.filter(c=>c.atraso!=null&&c.atraso>0).length} sócios com recompra atrasada`, s:'Intervalo habitual entre pedidos já ultrapassado — ligar hoje', go:'carteira', set:()=>{$('#cSit').value='atrasado'}},
     {c:'bad', ic:'⚠', b:`${CLI.filter(c=>!c.nOk).length} sócios pediram e nada foi faturado`, s:`${fmtR(sum(CLI.filter(c=>!c.nOk),c=>c.tot))} em pedidos cancelados/rejeitados sem recuperação`, go:'carteira', set:()=>{$('#cSit').value='perdido'}},
     {c:'warn', ic:'R$', b:`${fmtR(sum(rej,x=>x.valor))} rejeitados por preço/aprovação`, s:`${rej.length} pedidos — ver itens, preço pedido × tabela e aprovador`, go:'intel'},
@@ -764,7 +768,7 @@ function renderCarteira(){
      && (sit===''|| (sit==='ativo'&&c.nOk>0) || (sit==='perdido'&&!c.nOk) || (sit==='atrasado'&&c.atraso!=null&&c.atraso>0) || (sit==='nao'&&c.yoy==='nao')));
   $('#cCount').textContent = ROLE==='vendedor' ? `${rows.length} sócios` : `${rows.length} sócios · ${fmtR(sum(rows,c=>c.fat))} faturados`;
   const colsCart = [
-    {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num}${c.yoy==='nao'?' · <span class="tag low">não voltou em '+ANO+'</span>':c.yoy==='novo'?' · <span class="tag promo">novo</span>':''}</div>`},
+    {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num}${c.yoy==='nao'?' · <span class="tag low">sem compra em '+PER_CURTO()+'</span>':c.yoy==='novo'?' · <span class="tag promo">novo</span>':''}</div>`},
     {k:'n',l:'Pedidos',num:true,f:c=>`${c.nOk}<span class="muted">/${c.n}</span>`},
     {k:'fat',l:'Faturado',num:true,f:c=>fmtR(c.fat),sort:true},
     {k:'perd',l:'Perdido',num:true,v:c=>c.canc+c.rej,f:c=>c.canc+c.rej?`<span style="color:var(--bad)">${fmtR(c.canc+c.rej)}</span>`:'—'},
@@ -789,7 +793,7 @@ function openClient(id){
     <div class="grid kpis" style="margin-bottom:14px">
       ${ROLE==='gerente'? kpi('Faturado', fmtR(c.fat), `ticket ${fmtR(c.nOk?c.fat/c.nOk:0)}`)+kpi('Perdido', fmtR(c.canc+c.rej), `${fmtR(c.canc)} canc. · ${fmtR(c.rej)} rej.`) : ''}
       ${kpi('Última compra', c.lastOk?fmtD(c.lastOk):'—', `${c.diasSem} dias sem comprar`)}${kpi('Frequência', c.freq!=null?c.freq.toFixed(1)+' d':'—', c.prox?`próx. prevista ${fmtD(c.prox)}`:'sem base')}
-      ${HAS_YOY&&ROLE==='gerente'?kpi(`${ANT} (mesmo período)`, fmtR(c.fatLY), `${fmtR(c.fatLYall)} no total carregado de ${ANT}`)+kpi(`${ANO} até agora`, fmtR(c.fatCY), c.yoy==='nao'?'<span style="color:var(--bad)">ainda não comprou este ano</span>':deltaHtml(c.fatCY,c.fatLY)):''}
+      ${HAS_YOY&&ROLE==='gerente'?kpi(PER_ANT(), fmtR(c.fatLY), `${fmtR(c.fatLYall)} no total carregado de ${ANT}`)+kpi(PER_CURTO(), fmtR(c.fatCY), c.yoy==='nao'?'<span style="color:var(--bad)">sem compra neste período</span>':deltaHtml(c.fatCY,c.fatLY)):''}
     </div>
     <h3>Oportunidades para a ligação</h3>
     <div style="margin-bottom:14px">
@@ -834,7 +838,7 @@ function buildScript(c, promo, low){
   if(c.diasSem>=14 && c.lastOk) s += `Vi que a última compra de vocês foi em ${fmtD(c.lastOk)} (${c.diasSem} dias) — normalmente vocês repõem a cada ${c.freq?c.freq.toFixed(0):'~14'} dias. Posso já deixar o pedido pronto?\n`;
   else if(!c.nOk) s += `Vi que o pedido de ${fmtD(c.last)} não foi concluído (${c.ords[c.ords.length-1].status.toLowerCase()}). Quero resolver isso para vocês: ${c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)? 'o motivo foi "'+c.ords[c.ords.length-1].itens.map(i=>i.motivo).find(Boolean)+'"' : 'consigo refazer com o preço vigente'}.\n`;
   else s += `Estou ligando para adiantar a reposição de vocês.\n`;
-  if(c.yoy==='nao') s += ROLE==='gerente'
+  if(c.yoy==='nao' && c.fatLYall>0) s += ROLE==='gerente'
     ? `No ano passado vocês compraram ${fmtR(c.fatLYall)} com a gente neste período e este ano ainda não registramos pedido — quero garantir que não falte nada para vocês.
 `
     : `No ano passado vocês compravam com a gente neste período e este ano ainda não registramos pedido — quero garantir que não falte nada para vocês.
@@ -996,8 +1000,8 @@ function yoyItems(){
   for(const l of LINES){ if(!OK.has(l.status)) continue; if(lySet.has(l.pedido)) add(l,'ly'); else if(cySet.has(l.pedido)) add(l,'cy'); }
   return [...m.values()].map(r=>{ const st = (r.lyV>0&&r.cyV===0)?'nao':(r.lyV===0&&r.cyV>0)?'novo':(r.lyV>0&&r.cyV<r.lyV*0.7)?'queda':(r.cyV>r.lyV)?'cresceu':'estavel'; const s=stockByEan.get(r.ean); return {...r, st, lyC:r.lyC.size, cyC:r.cyC.size, secao:r.secao||s?.secao, estoque:s?.estoque, promo:vigPromo(r.ean)}; });
 }
-const stLabel = {nao:'<span class="tag low">não voltou</span>', queda:'<span class="tag warn">queda</span>', cresceu:'<span class="tag promo">cresceu</span>', novo:'<span class="tag">novo</span>', estavel:'<span class="muted small">estável</span>'};
-const stLabelIt = {nao:'<span class="tag low">sem venda</span>', queda:'<span class="tag warn">queda</span>', cresceu:'<span class="tag promo">cresceu</span>', novo:'<span class="tag">novo</span>', estavel:'<span class="muted small">estável</span>'};
+const stLabel = {nao:'<span class="tag low">sem compra no período</span>', queda:'<span class="tag warn">queda</span>', cresceu:'<span class="tag promo">cresceu</span>', novo:'<span class="tag">novo</span>', estavel:'<span class="muted small">estável</span>'};
+const stLabelIt = {nao:'<span class="tag low">sem venda no período</span>', queda:'<span class="tag warn">queda</span>', cresceu:'<span class="tag promo">cresceu</span>', novo:'<span class="tag">novo</span>', estavel:'<span class="muted small">estável</span>'};
 function lineChart(rows, series, tip){
   const W=640,H=220,pl=56,pr=10,pt=10,pb=26, iw=W-pl-pr, ih=H-pt-pb;
   const mx=Math.max(...rows.flatMap(r=>series.map(s=>r[s[0]])),1); const n=rows.length;
@@ -1018,7 +1022,7 @@ function renderYoy(){
   const perd=x=>sum(x.filter(o=>!OK.has(o.status)),o=>o.valor);
   const cliCY=new Set(ok.map(o=>o.ckey)).size, cliLY=new Set(lok.map(o=>o.ckey)).size;
   $('#kpisYoy').innerHTML=[
-    kpi(`Faturado ${ANO}`, fmtR(fat), deltaHtml(fat,lfat)+` (${fmtR(lfat)})`),
+    kpi(`Faturado ${PER_CURTO()}`, fmtR(fat), deltaHtml(fat,lfat)+` (${fmtR(lfat)})`),
     kpi('Pedidos faturados', ok.length, deltaHtml(ok.length,lok.length)+` (${lok.length})`),
     kpi('Ticket médio', fmtR(ok.length?fat/ok.length:0), deltaHtml(ok.length?fat/ok.length:0, lok.length?lfat/lok.length:0)),
     kpi('Sócios com compra', cliCY, deltaHtml(cliCY,cliLY)+` (${cliLY})`),
@@ -1043,13 +1047,13 @@ function renderYoy(){
 function renderYoyCli(){
   const sit=$('#ySit').value, q=$('#ySearch').value.toLowerCase();
   const rows=CLI.filter(c=>(c.fatLYall>0||c.fatCY>0)&&(!sit||c.yoy===sit)&&(!q||c.nome.toLowerCase().includes(q)));
-  $('#yCount').textContent=`${rows.length} sócios · ${ANT}: ${fmtR(sum(rows,c=>c.fatLY))} · ${ANO}: ${fmtR(sum(rows,c=>c.fatCY))}`;
+  $('#yCount').textContent=`${rows.length} sócios · ${PER_ANT()}: ${fmtR(sum(rows,c=>c.fatLY))} · ${PER_CURTO()}: ${fmtR(sum(rows,c=>c.fatCY))}`;
   table($('#tYoyCli'),[
     {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num} · última compra ${c.lastOk?fmtD(c.lastOk):'—'}</div>`},
     {k:'yoy',l:'Situação',f:c=>stLabel[c.yoy]||'—'},
-    {k:'fatLY',l:`${ANT} mesmo período`,num:true,f:c=>fmtR(c.fatLY)},
+    {k:'fatLY',l:PER_ANT(),num:true,f:c=>fmtR(c.fatLY)},
     {k:'fatLYall',l:`${ANT} total carregado`,num:true,f:c=>fmtR(c.fatLYall),sort:true},
-    {k:'fatCY',l:String(ANO),num:true,f:c=>fmtR(c.fatCY)},
+    {k:'fatCY',l:PER_CURTO(),num:true,f:c=>fmtR(c.fatCY)},
     {k:'d',l:'Δ',num:true,v:c=>pct(c.fatCY,c.fatLY)??(c.fatCY?1e9:-1e9),f:c=>c.fatLY?deltaHtml(c.fatCY,c.fatLY).replace(' vs '+ANT,''):'—'},
     {k:'top',l:`O que comprava em ${ANT}`,f:c=>esc(c.itens.filter(i=>i.n).slice(0,2).map(i=>i.desc).join(', '))},
   ],rows,{row:openClient,id:c=>c.id});
@@ -1245,7 +1249,7 @@ function qualidadeDados(){
 
 /* ---- registrar contato ---- */
 function openAcao(c, origem){
-  if(!vendedorNome()){ const n=prompt('Seu nome ou matrícula (fica salvo neste dispositivo):'); if(!n) return; try{ localStorage.setItem('tv_vend',n.trim()); }catch(e){} }
+  if(!vendedorNome()){ let n=null; try{ n=prompt('Seu nome ou matrícula (fica salvo neste dispositivo):'); }catch(e){} if(!n){ alert('Escolha seu nome em Equipe › Eu sou antes de registrar.'); return; } try{ localStorage.setItem('tv_vend',n.trim()); }catch(e){} }
   const id='a'+Date.now();
   const html=`<div id="acaoBox" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px">
     <div class="card" style="width:min(460px,100%)">
@@ -1934,7 +1938,7 @@ function renderFilaResto(){
 /* ---- modal: registrar tentativa ---- */
 function openTentativa(c){
   if(!c) return;
-  if(!vendedorNome()){ const n=prompt('Seu nome ou matrícula (fica salvo neste dispositivo):'); if(!n) return; try{ localStorage.setItem('tv_vend',n.trim()); }catch(e){} }
+  if(!vendedorNome()){ let n=null; try{ n=prompt('Seu nome ou matrícula (fica salvo neste dispositivo):'); }catch(e){} if(!n){ alert('Escolha seu nome em Equipe › Eu sou antes de registrar.'); return; } try{ localStorage.setItem('tv_vend',n.trim()); }catch(e){} }
   const s=situacao(c.id), cad=CADASTRO[c.id]||{};
   const promo=c.itens.filter(x=>x.promo).slice(0,3);
   document.body.insertAdjacentHTML('beforeend', `<div id="tentBox" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px;overflow:auto">
