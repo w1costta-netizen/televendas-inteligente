@@ -276,6 +276,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <label>Buscar<input type="search" id="cSearch" placeholder="Nome ou nº do sócio"></label>
     <label>Dias sem comprar<select id="cDias"><option value="0">Todos</option><option value="7">≥ 7 dias</option><option value="14">≥ 14 dias</option><option value="21">≥ 21 dias</option></select></label>
     <label>Situação<select id="cSit"><option value="">Todas</option><option value="ativo">Com pedido faturado</option><option value="perdido">Sem nenhum faturado</option><option value="atrasado">Recompra atrasada</option><option value="nao">Sem compra no período selecionado</option></select></label>
+    <label>Telefone<select id="cTel"><option value="">Todos</option><option value="com">Com telefone</option><option value="sem">Sem telefone</option></select></label>
     <label>Risco<select id="cRisco"><option value="">Todos</option><option value="alto">Alto</option><option value="medio">Médio</option><option value="baixo">Baixo</option></select></label>
     <label>Data de referência<input type="date" id="cRef"></label>
     <span class="muted small" style="align-self:flex-end;padding-bottom:8px" id="cCount"></span>
@@ -773,10 +774,12 @@ const riskHtml = c => `<span class="risk ${c.risco}">● ${c.risco==='alto'?'Alt
 
 /* ---------------------------------- carteira ---------------------------------- */
 function renderCarteira(){
-  const q=$('#cSearch').value.toLowerCase(), dmin=+$('#cDias').value, sit=$('#cSit').value, rk=$('#cRisco').value;
+  const q=$('#cSearch').value.toLowerCase(), dmin=+$('#cDias').value, sit=$('#cSit').value, rk=$('#cRisco').value, ftel=$('#cTel').value;
   let rows = CLI.filter(c=> (!q || c.nome.toLowerCase().includes(q) || String(c.num).includes(q)) && c.diasSem>=dmin && (!rk||c.risco===rk)
-     && (sit===''|| (sit==='ativo'&&c.nOk>0) || (sit==='perdido'&&!c.nOk) || (sit==='atrasado'&&c.atraso!=null&&c.atraso>0) || (sit==='nao'&&c.yoy==='nao')));
-  $('#cCount').textContent = ROLE==='vendedor' ? `${rows.length} sócios` : `${rows.length} sócios · ${fmtR(sum(rows,c=>c.fat))} faturados`;
+     && (sit===''|| (sit==='ativo'&&c.nOk>0) || (sit==='perdido'&&!c.nOk) || (sit==='atrasado'&&c.atraso!=null&&c.atraso>0) || (sit==='nao'&&c.yoy==='nao'))
+     && (ftel===''|| (ftel==='com'&&!!CADASTRO[c.id]?.telefone) || (ftel==='sem'&&!CADASTRO[c.id]?.telefone)));
+  const comTel = rows.filter(c=>CADASTRO[c.id]?.telefone).length;
+  $('#cCount').innerHTML = `${rows.length} sócios${ROLE==='vendedor'?'':` · ${fmtR(sum(rows,c=>c.fat))} faturados`} · <b>${comTel}</b> com telefone${rows.length-comTel?` · <span style="color:var(--bad)">${rows.length-comTel} sem</span>`:''}`;
   const colsCart = [
     {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num}${c.yoy==='nao'?' · <span class="tag low">sem compra em '+PER_CURTO()+'</span>':c.yoy==='novo'?' · <span class="tag promo">novo</span>':''}</div>`},
     {k:'n',l:'Pedidos',num:true,f:c=>`${c.nOk}<span class="muted">/${c.n}</span>`},
@@ -788,11 +791,17 @@ function renderCarteira(){
     {k:'atraso',l:'Recompra',num:true,f:c=>c.atraso==null?'—':c.atraso>0?`<span class="pill REJEITADO">atrasada ${c.atraso}d</span>`:`<span class="pill FATURADO">em ${-c.atraso}d</span>`},
     {k:'score',l:'Risco',f:riskHtml},
     {k:'itens',l:'Itens',num:true,v:c=>c.itens.length},
+    {k:'tel',l:'Telefone',v:c=>(CADASTRO[c.id]?.telefone?1:0),f:c=>{const t=CADASTRO[c.id]?.telefone;
+      return t ? `<div style="font-weight:700;font-variant-numeric:tabular-nums">${esc(t)}</div><a class="btn sm" href="tel:${telLimpo(t)}">☎</a> <a class="btn sm" href="https://wa.me/${telWa(t)}" target="_blank" rel="noopener">WhatsApp</a>`
+               : `<input class="btn sm" data-telcart="${esc(c.id)}" placeholder="(81) 9…" style="width:120px"><button class="btn sm" data-telcartok="${esc(c.id)}">Salvar</button>`;}},
     {k:'acao',l:'Contato',num:true,v:c=>situacao(c.id).tentativas,f:c=>{const s=situacao(c.id); return `<button class="btn sm" data-tentcart="${esc(c.id)}">☎ Registrar</button>${s.acs.length?`<div class="small muted">${s.contatos?'falou '+s.contatos+'x':''}${s.tentativas?` · ${s.tentativas}/${MAX_TENTATIVAS} sem contato`:''}</div>`:''}`;}},
   ];
   const colsVend = new Set(['fat','perd','score']);
   table($('#tCart'), ROLE==='vendedor'? colsCart.filter(c=>!colsVend.has(c.k)) : colsCart, rows, {row:openClient, id:c=>c.id});
   $('#tCart').querySelectorAll('[data-tentcart]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTentativa(CLI.find(x=>x.id===b.dataset.tentcart)); });
+  $('#tCart').querySelectorAll('[data-telcart],[data-telcartok],a[href^="tel:"],a[href*="wa.me"]').forEach(el=>el.onclick=e=>e.stopPropagation());
+  $('#tCart').querySelectorAll('[data-telcartok]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); const inp=$('#tCart').querySelector(`[data-telcart="${CSS.escape(b.dataset.telcartok)}"]`); if(inp&&inp.value.trim()) salvaTelefone(b.dataset.telcartok, inp.value); });
+  $('#tCart').querySelectorAll('[data-telcart]').forEach(inp=>inp.onkeydown=e=>{ e.stopPropagation(); if(e.key==='Enter'&&inp.value.trim()) salvaTelefone(inp.dataset.telcart, inp.value); });
 }
 function openClient(id){
   const c = cliById().get(id); if(!c) return;
@@ -2467,7 +2476,7 @@ function renderProspec(){
 function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe,vendas:renderVendas,prospec:renderProspec})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
 document.addEventListener('click',e=>{ const k=e.target.closest('[data-go]'); if(k) go(k.dataset.go); const c=e.target.closest('[data-cli]'); if(c&&!e.target.closest('.drawer')) openClient(c.dataset.cli); });
-['#cSearch','#cDias','#cSit','#cRisco'].forEach(s=>$(s).addEventListener('input',renderCarteira));
+['#cSearch','#cDias','#cSit','#cRisco','#cTel'].forEach(s=>$(s).addEventListener('input',renderCarteira));
 $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ REF=new Date($('#cRef').value+'T00:00:00'); CLI=buildClients(); renderCarteira(); });
 ['#oSearch','#oSecao','#oVig','#oEstq','#oComp','#oNeg'].forEach(s=>$(s).addEventListener('input',renderOfertas));
 ['#ySit','#ySearch'].forEach(s=>$(s).addEventListener('input',renderYoyCli)); $('#yiSit').addEventListener('input',renderYoyIt);
