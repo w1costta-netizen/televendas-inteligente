@@ -225,6 +225,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <button data-v="estoque">Estoque & margem</button>
     <button data-v="intel">Inteligência <span class="n" id="nIntel"></span></button>
     <button data-v="result">Resultados</button>
+    <button data-v="prospec">Prospecção <span class="n" id="nPros"></span></button>
     <button data-v="tarefas">Tarefas do vendedor <span class="n" id="nFila"></span></button>
     <button data-v="equipe">Equipe</button>
   </nav>
@@ -298,6 +299,33 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
     <h3>Privacidade e LGPD</h3>
     <p class="small muted" style="margin:0 0 12px">Este app trata dados pessoais de empregados e de contatos dos sócios. Configure abaixo o que é compartilhado com a equipe e por quanto tempo os registros ficam guardados.</p>
     <div id="lgpdBox"></div>
+  </div>
+</section>
+
+<!-- ================= PROSPECÇÃO ================= -->
+<section class="view" id="v-prospec">
+  <h2>Prospecção</h2>
+  <p class="sub">Empresas cadastradas no clube que <b>nunca compraram pelo televendas</b>. Todas com telefone. A prioridade segue o valor típico de um cliente de cada segmento — quanto rende hoje um sócio parecido que já compra.</p>
+  <div id="prospecBody">
+    <div class="grid kpis" id="kpisProspec"></div>
+    <div class="grid row2" style="margin-top:14px">
+      <div class="card pad0"><div class="tbl-wrap" style="max-height:330px"><table id="tSegRank"></table></div></div>
+      <div class="card">
+        <h3>Como a prioridade é calculada</h3>
+        <p class="small muted" style="margin:0 0 8px">Para cada segmento, o app olha quanto faturam hoje os sócios <b>daquele mesmo segmento que já compram</b> e usa a mediana como potencial. Segmentos sem comprador ficam sem estimativa.</p>
+        <p class="small muted" style="margin:0 0 8px">Empresas marcadas como <span class="tag promo">filial de cliente ativo</span> têm o mesmo CNPJ-raiz de quem já compra — são as mais fáceis de converter e aparecem primeiro.</p>
+        <p class="small muted" style="margin:0">A base já foi limpa: CNPJ repetido e empresas que na verdade já são clientes foram removidos. Telefone compartilhado entre empresas diferentes fica sinalizado na lista.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="filters">
+        <label>Buscar<input type="search" id="pBusca" placeholder="Empresa, CNPJ ou telefone"></label>
+        <label>Segmento<select id="pSeg"><option value="">Todos os segmentos</option></select></label>
+        <label>Situação<select id="pSit"><option value="">Todas</option><option value="novo">Ainda não contatadas</option><option value="tentando">Em tentativa</option><option value="contatado">Já contatadas</option><option value="grupo">Filial de cliente ativo</option><option value="email">Com e-mail</option></select></label>
+        <span class="muted small" style="align-self:flex-end;padding-bottom:8px" id="pCount"></span>
+      </div>
+      <div class="tbl-wrap" style="max-height:620px"><table id="tProspec"></table></div>
+    </div>
   </div>
 </section>
 
@@ -1912,7 +1940,7 @@ function openTentativa(c){
   document.body.insertAdjacentHTML('beforeend', `<div id="tentBox" style="position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.35);display:grid;place-items:center;padding:16px;overflow:auto">
     <div class="card" style="width:min(640px,100%);max-height:92vh;overflow:auto">
       <h3 style="margin-bottom:2px">Registrar tentativa de contato</h3>
-      <p class="small muted" style="margin:0 0 6px">${esc(c.nome)} · nº ${c.num} · ${c.diasSem} dias sem comprar · tentativa ${s.tentativas+1}</p>
+      <p class="small muted" style="margin:0 0 6px">${esc(c.nome)} · nº ${c.num} · ${c.prospect?'<b>nunca comprou pelo televendas</b>':`${c.diasSem} dias sem comprar`} · tentativa ${s.tentativas+1}</p>
       ${promo.length?`<div class="note" style="margin-bottom:12px"><b>Ofertas para usar na ligação:</b> ${promo.map(p=>`${esc(p.desc)} por ${fmtR2(p.promoPreco)} até ${fmtD(p.promo.fim)}`).join(' · ')}</div>`:''}
       <div class="filters" style="margin-bottom:10px">
         <label class="chk"><input type="radio" name="tcontato" value="sim" checked> <b>Consegui falar</b></label>
@@ -2213,8 +2241,106 @@ function analiseVendas(V, deps, cats, tot, pr){
                     : '<p class="small muted">Sem desvios relevantes no período.</p>';
 }
 
+/* ---------------------------------- prospecção ---------------------------------- */
+const temProspects = () => Array.isArray(D.prospects) && D.prospects.length>0;
+/* valor típico de quem já compra em cada segmento — base da priorização */
+let VALOR_SEG = null;
+function valorPorSegmento(){
+  if(VALOR_SEG) return VALOR_SEG;
+  const m = new Map();
+  for(const c of CLI){
+    const seg = CADASTRO[c.id]?.segmento; if(!seg || !c.fat) continue;
+    (m.get(seg) || m.set(seg,[]).get(seg)).push(c.fat);
+  }
+  VALOR_SEG = {};
+  for(const [seg,v] of m){
+    v.sort((a,b)=>a-b);
+    VALOR_SEG[seg] = {mediana: v[v.length>>1], n: v.length, total: v.reduce((a,b)=>a+b,0)};
+  }
+  return VALOR_SEG;
+}
+function prospectsEnriquecidos(){
+  const vs = valorPorSegmento();
+  return D.prospects.map(p=>{
+    const v = vs[p.segmento];
+    const s = situacao(p.ckey);
+    return {...p, potencial: v? v.mediana : 0, compradoresSeg: v? v.n : 0, st:s.st, tentativas:s.tentativas, acs:s.acs};
+  });
+}
+/* um prospect visto como "cliente", para reaproveitar a ficha e o registro de contato */
+function prospectComoCliente(p){
+  return {id:p.ckey, num:p.membership||p.cnpj||'—', nome:p.nome, prospect:true,
+          ords:[{clube:p.clube||''}], itens:[], n:0, nOk:0, fat:0, canc:0, rej:0, tot:0,
+          fatCY:0, fatLY:0, fatLYall:0, yoy:null, diasSem:null, lastOk:null, freq:null, prox:null,
+          atraso:null, score:0, risco:'baixo'};
+}
+function renderProspec(){
+  if(!temProspects()){
+    $('#prospecBody').innerHTML = '<div class="card"><h3>Sem base de prospecção</h3><p class="small muted">Importe o relatório <b>Social-PJ</b> de sócios sem pedido.</p></div>';
+    return;
+  }
+  const todos = prospectsEnriquecidos();
+  const segs = [...new Set(todos.map(p=>p.segmento))].sort();
+  if($('#pSeg').options.length<=1){
+    const vs = valorPorSegmento();
+    $('#pSeg').innerHTML = '<option value="">Todos os segmentos</option>' +
+      segs.map(s=>`<option value="${esc(s)}">${esc(s)} (${todos.filter(p=>p.segmento===s).length})${vs[s]?` · cliente típico ${fmtR(vs[s].mediana)}`:''}</option>`).join('');
+  }
+  const q=$('#pBusca').value.toLowerCase(), seg=$('#pSeg').value, sit=$('#pSit').value;
+  let rows = todos.filter(p=>
+      (!q || p.nome.toLowerCase().includes(q) || (p.cnpj||'').includes(q) || (p.telefone||'').includes(q))
+   && (!seg || p.segmento===seg)
+   && (sit==='' || (sit==='novo'&&p.st==='novo') || (sit==='tentando'&&p.st==='tentativa')
+       || (sit==='contatado'&&p.st==='contatado') || (sit==='grupo'&&p.grupoAtivo)
+       || (sit==='email'&&!!p.email)));
+  rows.sort((a,b)=> (b.grupoAtivo?1:0)-(a.grupoAtivo?1:0) || b.potencial-a.potencial || a.nome.localeCompare(b.nome));
+
+  const trabalhados = todos.filter(p=>p.acs.length).length;
+  const potTotal = rows.reduce((a,p)=>a+p.potencial,0);
+  $('#kpisProspec').innerHTML=[
+    kpi('Empresas na base', fmtN(todos.length), `${fmtN(todos.filter(p=>p.telefone).length)} com telefone · ${fmtN(todos.filter(p=>p.email).length)} com e-mail`),
+    kpi('No filtro atual', fmtN(rows.length), seg? esc(seg) : 'todos os segmentos'),
+    kpi('Potencial do filtro', fmtR(potTotal), 'soma do valor típico de cliente de cada segmento'),
+    kpi('Já trabalhados', fmtN(trabalhados), `${fmtN(todos.filter(p=>p.st==='contatado').length)} contatados · ${fmtN(todos.filter(p=>p.st==='tentativa').length)} em tentativa`),
+    kpi('Filial de cliente ativo', fmtN(todos.filter(p=>p.grupoAtivo).length), 'mesmo CNPJ-raiz de quem já compra — prioridade'),
+  ].join('');
+
+  // ranking de segmentos: onde vale investir
+  const vs = valorPorSegmento();
+  const rank = segs.map(s=>({seg:s, n:todos.filter(p=>p.segmento===s).length,
+                             mediana: vs[s]?.mediana||0, compradores: vs[s]?.n||0}))
+                   .filter(x=>x.n>0).sort((a,b)=>b.mediana-a.mediana || b.n-a.n);
+  table($('#tSegRank'),[
+    {k:'seg',l:'Segmento',f:r=>`<b>${esc(r.seg)}</b>`},
+    {k:'n',l:'Prospects',num:true,f:r=>fmtN(r.n)},
+    {k:'compradores',l:'Já compram',num:true,f:r=>fmtN(r.compradores)},
+    {k:'mediana',l:'Cliente típico',num:true,f:r=>r.mediana?fmtR(r.mediana):'<span class="muted">sem base</span>',sort:true},
+    {k:'acao',l:'',f:r=>`<button class="btn sm" data-seg="${esc(r.seg)}">Ver lista</button>`},
+  ],rank);
+  $('#tSegRank').querySelectorAll('[data-seg]').forEach(b=>b.onclick=()=>{ $('#pSeg').value=b.dataset.seg; renderProspec(); });
+
+  $('#pCount').textContent = `${rows.length} empresas`;
+  table($('#tProspec'),[
+    {k:'nome',l:'Empresa',f:p=>`<b>${esc(p.nome)}</b>${p.grupoAtivo?' <span class="tag promo">filial de cliente ativo</span>':''}${ST_LABEL[p.st]&&p.st!=='novo'?' '+ST_LABEL[p.st]:''}
+      <div class="small muted">${esc(p.segmento||'')}${p.cnpj?` · CNPJ ${esc(p.cnpj)}`:''}${p.cadastro?` · sócio desde ${fmtD(p.cadastro)}`:''}</div>
+      ${p.telCompartilhado?`<div class="small" style="color:var(--warn)">mesmo telefone de outras ${p.telCompartilhado-1} empresa(s) — confirmar antes de ligar de novo</div>`:''}`},
+    {k:'potencial',l:'Potencial',num:true,f:p=>p.potencial?`${fmtR(p.potencial)}<div class="small muted">típico do segmento</div>`:'<span class="muted">—</span>',sort:true},
+    {k:'telefone',l:'Contato',f:p=>p.telefone
+      ? `<div style="font-weight:700;font-variant-numeric:tabular-nums">${esc(p.telefone)}</div>
+         <a class="btn sm" href="tel:${telLimpo(p.telefone)}">☎ Ligar</a> <a class="btn sm" href="https://wa.me/${telWa(p.telefone)}" target="_blank" rel="noopener">WhatsApp</a>
+         ${p.email?`<div class="small muted" style="margin-top:3px">${esc(String(p.email).toLowerCase())}</div>`:''}`
+      : '<span class="muted">sem telefone</span>'},
+    {k:'tentativas',l:'Tentativas',num:true,f:p=>p.tentativas?`${p.tentativas}/${MAX_TENTATIVAS}`:'—'},
+    {k:'acao',l:'',f:p=>`<button class="btn primary sm" data-pros="${esc(p.ckey)}">Registrar contato</button>`},
+  ],rows.slice(0,400));
+  $('#tProspec').querySelectorAll('[data-pros]').forEach(b=>b.onclick=()=>{
+    const p = todos.find(x=>x.ckey===b.dataset.pros); if(p) openTentativa(prospectComoCliente(p));
+  });
+  if(rows.length>400) $('#pCount').textContent = `${rows.length} empresas (mostrando as 400 de maior potencial)`;
+}
+
 /* ---------------------------------- navegação ---------------------------------- */
-function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe,vendas:renderVendas})[v](); window.scrollTo({top:0}); }
+function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe,vendas:renderVendas,prospec:renderProspec})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
 document.addEventListener('click',e=>{ const k=e.target.closest('[data-go]'); if(k) go(k.dataset.go); const c=e.target.closest('[data-cli]'); if(c&&!e.target.closest('.drawer')) openClient(c.dataset.cli); });
 ['#cSearch','#cDias','#cSit','#cRisco'].forEach(s=>$(s).addEventListener('input',renderCarteira));
@@ -2222,6 +2348,7 @@ $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ 
 ['#oSearch','#oSecao','#oVig','#oEstq','#oComp','#oNeg'].forEach(s=>$(s).addEventListener('input',renderOfertas));
 ['#ySit','#ySearch'].forEach(s=>$(s).addEventListener('input',renderYoyCli)); $('#yiSit').addEventListener('input',renderYoyIt);
 $('#vPeriodo').addEventListener('change',renderVendas);
+['#pBusca','#pSeg','#pSit'].forEach(s=>$(s).addEventListener('input',renderProspec));
 $('#vAdd').onclick=async()=>{ const n=$('#vNome').value.trim(); if(!n) return; VENDEDORES.push({nome:n, email:$('#vEmail').value.trim()}); await salvaVendedores(); $('#vNome').value=''; $('#vEmail').value=''; renderFila(); };
 $('#fGerar').onclick=()=>gerarFila($('#fCrit').value, +$('#fQtd').value||5);
 $('#fMais').onclick=async()=>{ window.__filaCfg={criterio:$('#fCrit').value||'ano', qtd:(+$('#fQtd').value||5)}; await idbSet('filaCfg', window.__filaCfg);
@@ -2336,7 +2463,7 @@ function applyClub(F, cod){
   const clubes = F.meta.clubes || [{cod:'', nome:F.meta.clube||''}];
   if(cod!=='all' && !clubes.some(c=>c.cod===cod)) cod='all';
   const all = cod==='all';
-  const D = {meta:{...F.meta}, vendas:F.vendas||[], prioridades:F.prioridades};
+  const D = {meta:{...F.meta}, vendas:F.vendas||[], prioridades:F.prioridades, prospects:(F.prospects||[]).filter(x=>!cod||cod==='all'||!x.clube||x.clube===cod)};
   D.meta.clube_nome = all ? (clubes.length>1 ? `Todos os clubes (${clubes.length})` : clubes[0].nome) : (clubes.find(c=>c.cod===cod)?.nome||cod);
   const inClub = x => all || x.clube===cod || x.clube==null;
   D.orders = F.orders.filter(inClub);
