@@ -1934,7 +1934,8 @@ function exportaCadastro(){
 
 /* ---------------------------------- vendas (venda real · LFL) ---------------------------------- */
 const temVendas = () => Array.isArray(D.vendas) && D.vendas.length>0;
-const fmtLFL = v => v==null ? '<span class="muted">—</span>'
+const fmtLFL = (v,r) => v==null ? '<span class="muted">—</span>'
+  : (r && typeof semBase==='function' && semBase(r)) ? '<span class="muted" title="Não houve venda deste item no mesmo período do ano anterior">sem base</span>'
   : `<span style="color:${v<0?'var(--bad)':'var(--good)'};font-weight:700">${v>0?'+':''}${(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span>`;
 const seta = v => v==null ? '' : (v<0 ? '▼' : '▲');
 function vendaAtual(){
@@ -1944,7 +1945,7 @@ function vendaAtual(){
 /* classifica cada categoria/departamento em 4 quadrantes de ação */
 function classifica(r, receitaTotal){
   const peso = receitaTotal ? r.receita/receitaTotal : 0;
-  const cresce = (r.lfl_receita||0) >= 0;
+  const cresce = semBase(r) ? ((r.receita||0) >= receitaTotal*0.01) : ((r.lfl_receita||0) >= 0);
   const margemOk = (r.pct_margem==null) || r.pct_margem >= 0;
   if(peso>=0.05 && cresce && margemOk) return {k:'motor', t:'Motor', cls:'good', acao:'Proteger e abastecer — é o que sustenta o canal'};
   if(peso>=0.05 && cresce && !margemOk) return {k:'volume', t:'Cresce sem margem', cls:'warn', acao:'Rever preço e mix: vende mais e perde dinheiro'};
@@ -1996,7 +1997,7 @@ function renderVendas(){
         return `<div class="vcard ${c.cls}">
           <div class="vtop"><b>${esc(r.nome)}</b><span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span></div>
           <div class="vnum">${fmtR(r.receita)} <span class="small muted">${fmtP(r.receita/tot*100)} do total</span></div>
-          <div class="vlfl">${seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita)} <span class="small muted">LFL receita</span>
+          <div class="vlfl">${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)} <span class="small muted">LFL receita</span>
             ${r.pct_margem!=null?` · margem <b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`:''}</div>
           <div class="small muted" style="margin-top:6px">${fmtN(r.socios)} sócios ${fmtLFL(r.lfl_socios)} · volume ${fmtN(r.volume)} ${fmtLFL(r.lfl_volume)}</div>
           <div class="vacao">${c.acao}</div>
@@ -2016,7 +2017,7 @@ function renderVendas(){
     {k:'nome',l:'Categoria',f:r=>{const c=classifica(r,totC); return `<b>${esc(r.nome)}</b> <span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span>`;}},
     {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
     {k:'part',l:'% do total',num:true,v:r=>r.receita/totC,f:r=>fmtP(r.receita/totC*100)},
-    {k:'lfl_receita',l:'LFL receita',num:true,f:r=>`${seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita)}`},
+    {k:'lfl_receita',l:'LFL receita',num:true,f:r=>`${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)}`},
     {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
     {k:'margem',l:'Margem R$',num:true,f:r=>fmtR(r.margem)},
     {k:'socios',l:'Sócios',num:true,f:r=>`${fmtN(r.socios)} ${fmtLFL(r.lfl_socios)}`},
@@ -2029,7 +2030,7 @@ function renderVendas(){
   table($('#tProdVendas'),[
     {k:'nome',l:'Produto',f:r=>`${esc(r.nome)}<div class="small muted">${esc(r.cod||'')}</div>`},
     {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
-    {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita)},
+    {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita,r)},
     {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
     {k:'socios',l:'Sócios',num:true,f:r=>fmtN(r.socios)},
     {k:'volume',l:'Volume',num:true,f:r=>fmtN(r.volume)},
@@ -2039,27 +2040,81 @@ function renderVendas(){
 }
 
 /* leitura automática: o que fazer para melhorar a venda */
-function analiseVendas(V, deps, cats, tot){
-  const C=V.clube, pts=[];
-  const neg = deps.filter(r=>(r.pct_margem??0)<0).sort((a,b)=>a.margem-b.margem);
-  const queda = deps.filter(r=>(r.lfl_receita??0)<0 && r.receita/tot>=0.05).sort((a,b)=>a.lfl_receita-b.lfl_receita);
-  const sobe = deps.filter(r=>(r.lfl_receita??0)>0 && (r.pct_margem??0)>0).sort((a,b)=>b.lfl_receita-a.lfl_receita);
-  const topMg = cats.filter(r=>(r.pct_margem??0)>0.05).sort((a,b)=>b.pct_margem-a.pct_margem).slice(0,3);
+/* sem base comparável: LFL = 1 e o saldo é a própria receita (não existia no ano anterior) */
+const semBase = r => r.lfl_receita===1 && Math.abs((r.saldo_receita||0) - (r.receita||0)) < 0.01;
+const pctTxt = v => v==null ? '—' : `${v>0?'+':''}${(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;
+const share = (r,tot) => tot ? r.receita/tot*100 : 0;
+/* descreve um item com receita, peso e impacto em R$ */
+function descItem(r, tot){
+  const s = share(r,tot);
+  if(semBase(r)) return `<b>${esc(r.nome)}</b> ${fmtR(r.receita)} (${s.toFixed(1)}% da receita, <i>sem venda no ano anterior</i>)`;
+  const saldo = r.saldo_receita;
+  return `<b>${esc(r.nome)}</b> ${fmtR(r.receita)} (${s.toFixed(1)}% da receita) · ${pctTxt(r.lfl_receita)} LFL${saldo!=null?` = ${saldo<0?'perda':'ganho'} de ${fmtR(Math.abs(saldo))}`:''}`;
+}
 
-  if(C.pct_margem!=null && C.pct_margem<0)
-    pts.push(`<b>A margem do canal está negativa em ${(C.pct_margem*100).toFixed(2)}% (${fmtR(C.margem)}).</b> Cada real vendido hoje consome resultado. Antes de buscar volume, é preciso corrigir preço e mix — senão vender mais piora o número.`);
-  if(neg.length)
-    pts.push(`<b>Onde a margem sangra:</b> ${neg.slice(0,3).map(r=>`${esc(r.nome)} (${(r.pct_margem*100).toFixed(1)}%, ${fmtR(r.margem)})`).join(', ')}. Revisar as ofertas vigentes desses departamentos e conferir se há verba de fornecedor cobrindo o preço.`);
-  if(queda.length)
-    pts.push(`<b>Quedas que mais pesam:</b> ${queda.slice(0,3).map(r=>`${esc(r.nome)} ${fmtLFL(r.lfl_receita).replace(/<[^>]+>/g,'')} LFL`).join(', ')}. Como têm peso alto na receita, recuperar esses departamentos vale mais do que abrir categoria nova.`);
-  if(sobe.length)
-    pts.push(`<b>O que está funcionando:</b> ${sobe.slice(0,3).map(r=>`${esc(r.nome)} ${fmtLFL(r.lfl_receita).replace(/<[^>]+>/g,'')} LFL`).join(', ')} — crescendo com margem positiva. Ampliar a oferta desses itens na lista de ligação.`);
-  if(topMg.length)
-    pts.push(`<b>Categorias mais rentáveis:</b> ${topMg.map(r=>`${esc(r.nome)} (${(r.pct_margem*100).toFixed(1)}%)`).join(', ')}. Hoje representam pouco da receita — incluí-las no roteiro de cross-sell melhora a margem sem precisar vender mais volume.`);
-  if(C.lfl_socios!=null && C.lfl_volume!=null && C.lfl_socios>0 && C.lfl_volume<0)
-    pts.push(`<b>Mais sócios comprando menos:</b> sócios ${fmtLFL(C.lfl_socios).replace(/<[^>]+>/g,'')} e volume ${fmtLFL(C.lfl_volume).replace(/<[^>]+>/g,'')} LFL. A base está se pulverizando — o ganho está em aumentar a cesta de quem já compra (hoje ~1,2 item por pedido), não em captar mais um sócio pequeno.`);
-  if(C.lfl_ticket!=null && C.lfl_ticket<-0.1)
-    pts.push(`<b>Ticket caindo ${(C.lfl_ticket*100).toFixed(1)}% LFL.</b> Vale checar se as faixas de preço por quantidade estão sendo oferecidas: as ofertas exigem mínimo de 10 unidades na mediana, e pedidos abaixo disso perdem o preço promocional.`);
+function analiseVendas(V, deps, cats, tot){
+  const C=V.clube, pts=[], per=V.rotulo.toLowerCase();
+  const MIN = Math.max(tot*0.01, 1);        // relevância: 1% da receita do período
+  const rel = r => r.receita >= MIN;
+
+  // 1) margem do canal
+  if(C.pct_margem!=null && C.pct_margem<0){
+    const porReal = Math.abs(C.margem/C.receita);
+    pts.push(`<b>A venda está sendo feita com prejuízo.</b> Receita de ${fmtR(C.receita)} em ${esc(V.rotulo.toLowerCase())} gerou margem de <b style="color:var(--bad)">${fmtR(C.margem)}</b> (${(C.pct_margem*100).toFixed(2)}%): a cada R$ 100 vendidos, a empresa perde R$ ${(porReal*100).toFixed(2)}. Enquanto isso não for corrigido, <b>aumentar o volume aumenta o prejuízo</b>.`);
+  }
+
+  // 2) onde a margem sangra — ordenado por R$ perdido
+  const neg = deps.filter(r=>(r.margem??0)<0).sort((a,b)=>a.margem-b.margem);
+  if(neg.length){
+    const soma = neg.reduce((a,r)=>a+r.margem,0);
+    pts.push(`<b>Onde o prejuízo é gerado:</b> ${neg.slice(0,3).map(r=>
+      `${esc(r.nome)} perde ${fmtR(Math.abs(r.margem))} vendendo ${fmtR(r.receita)} (margem ${(r.pct_margem*100).toFixed(1)}%)`).join('; ')}.
+      Juntos somam ${fmtR(Math.abs(soma))} de margem negativa. <b>Ação:</b> revisar o preço praticado e as ofertas vigentes desses departamentos e confirmar se há verba de fornecedor cobrindo a diferença — hoje o custo cadastrado indica venda abaixo do custo.`);
+  }
+
+  // 3) quedas — ordenadas pelo R$ que deixou de entrar
+  const queda = deps.filter(r=>!semBase(r) && (r.saldo_receita??0)<0).sort((a,b)=>a.saldo_receita-b.saldo_receita);
+  if(queda.length){
+    const soma=queda.reduce((a,r)=>a+r.saldo_receita,0);
+    pts.push(`<b>Quanto deixou de entrar em relação ao ano anterior:</b> ${queda.slice(0,3).map(r=>
+      `${esc(r.nome)} ${fmtR(Math.abs(r.saldo_receita))} a menos (${pctTxt(r.lfl_receita)} LFL, ${share(r,tot).toFixed(1)}% da receita)`).join('; ')}.
+      Total das quedas: <b>${fmtR(Math.abs(soma))}</b>. <b>Ação:</b> como são os departamentos de maior peso, recuperar parte dessa queda vale mais do que abrir categoria nova — comece pelos sócios que compravam esses itens e pararam.`);
+  }
+
+  // 4) o que cresce de verdade — só o que é relevante em R$
+  const sobe = deps.filter(r=>!semBase(r) && (r.saldo_receita??0)>0).sort((a,b)=>b.saldo_receita-a.saldo_receita);
+  const novos = deps.filter(r=>semBase(r) && rel(r)).sort((a,b)=>b.receita-a.receita);
+  if(sobe.length||novos.length){
+    const partes=[];
+    if(sobe.length) partes.push(sobe.slice(0,3).map(r=>
+      `${esc(r.nome)} cresceu ${fmtR(r.saldo_receita)} (${pctTxt(r.lfl_receita)} LFL, margem ${r.pct_margem!=null?(r.pct_margem*100).toFixed(1)+'%':'—'})`).join('; '));
+    if(novos.length) partes.push(`${novos.map(r=>`${esc(r.nome)} ${fmtR(r.receita)} (vendeu agora, não vendia no ano anterior)`).join('; ')}`);
+    pts.push(`<b>O que de fato cresceu em reais:</b> ${partes.join('. ')}. <b>Ação:</b> incluir esses itens no roteiro de ligação de quem já compra as categorias principais.`);
+  }
+  const irrel = deps.filter(r=>(semBase(r)||(r.saldo_receita??0)>0) && !rel(r));
+  if(irrel.length) pts.push(`<span class="muted">Observação: ${irrel.map(r=>esc(r.nome)).join(', ')} aparecem com LFL positivo, mas representam menos de 1% da receita (${irrel.map(r=>fmtR(r.receita)).join(', ')}) — não mudam o resultado do canal.</span>`);
+
+  // 5) categorias rentáveis, com o quanto representam
+  const topMg = cats.filter(r=>(r.pct_margem??0)>0.05 && r.margem>0).sort((a,b)=>b.margem-a.margem).slice(0,4);
+  if(topMg.length){
+    const somaRec = topMg.reduce((a,r)=>a+r.receita,0);
+    pts.push(`<b>Categorias que dão lucro hoje:</b> ${topMg.map(r=>
+      `${esc(r.nome)} (margem ${(r.pct_margem*100).toFixed(1)}%, ${fmtR(r.margem)} sobre ${fmtR(r.receita)})`).join('; ')}.
+      Somadas, são apenas ${fmtR(somaRec)} de receita (${(somaRec/tot*100).toFixed(1)}% do total). <b>Ação:</b> ${(()=>{ const alvo=tot*0.05, mgMedia=topMg.reduce((s,r)=>s+r.pct_margem,0)/topMg.length; return `deslocar ${fmtR(alvo)} (5% da receita do período) dos departamentos deficitários para essas categorias geraria cerca de ${fmtR(alvo*mgMedia)} de margem, em vez de prejuízo`; })()} — entram como cross-sell na ficha do sócio.`);
+  }
+
+  // 6) comportamento da base
+  if(C.lfl_socios!=null && C.lfl_volume!=null && C.lfl_socios>0 && C.lfl_volume<0){
+    pts.push(`<b>Mais sócios comprando menos cada um:</b> ${fmtN(C.socios)} sócios (${pctTxt(C.lfl_socios)} LFL) compraram ${fmtN(C.volume)} unidades (${pctTxt(C.lfl_volume)} LFL), com gasto médio de ${fmtR(C.gasto)} (${pctTxt(C.lfl_gasto)}).
+      <b>Ação:</b> o ganho está na cesta de quem já compra — hoje o pedido do televendas tem cerca de 1,2 item. Subir para 1,6 item por pedido, sem nenhum sócio novo, já recupera parte da queda.`);
+  }
+
+  // 7) ticket e faixas de preço
+  if(C.lfl_ticket!=null && C.lfl_ticket<-0.05){
+    pts.push(`<b>Ticket médio caiu ${pctTxt(C.lfl_ticket)} LFL</b>, de aproximadamente ${fmtR(C.ticket/(1+C.lfl_ticket))} para ${fmtR(C.ticket)}.
+      <b>Ação:</b> conferir se as faixas de preço por quantidade estão sendo oferecidas na ligação — as ofertas vigentes exigem mínimo de 10 unidades na mediana, e pedidos abaixo disso perdem o preço promocional e puxam o ticket para baixo.`);
+  }
+
   return pts.length ? `<ol class="vlista">${pts.map(p=>`<li>${p}</li>`).join('')}</ol>`
                     : '<p class="small muted">Sem desvios relevantes no período.</p>';
 }
