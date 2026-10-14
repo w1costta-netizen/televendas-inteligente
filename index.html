@@ -403,6 +403,11 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
       <div class="tbl-wrap" style="max-height:460px"><table id="tCats"></table></div>
     </div>
     <div class="card" style="margin-top:14px">
+      <h3>Onde a receita foi perdida — produtos</h3>
+      <p class="small muted" style="margin:0 0 10px">Itens que vendiam no ano anterior e caíram ou pararam. O <b>saldo</b> é quanto deixou de entrar no período.</p>
+      <div class="tbl-wrap" style="max-height:340px"><table id="tPerdas"></table></div>
+    </div>
+    <div class="card" style="margin-top:14px">
       <h3>Produtos <span class="muted small" id="vProdCount" style="font-weight:400"></span></h3>
       <div class="tbl-wrap" style="max-height:460px"><table id="tProdVendas"></table></div>
     </div>
@@ -1935,6 +1940,7 @@ function exportaCadastro(){
 /* ---------------------------------- vendas (venda real · LFL) ---------------------------------- */
 const temVendas = () => Array.isArray(D.vendas) && D.vendas.length>0;
 const fmtLFL = (v,r) => v==null ? '<span class="muted">—</span>'
+  : (r && typeof parouVender==='function' && parouVender(r)) ? '<span class="tag low" title="Vendia no ano anterior e não vendeu nada neste período">parou de vender</span>'
   : (r && typeof semBase==='function' && semBase(r)) ? '<span class="muted" title="Não houve venda deste item no mesmo período do ano anterior">sem base</span>'
   : `<span style="color:${v<0?'var(--bad)':'var(--good)'};font-weight:700">${v>0?'+':''}${(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%</span>`;
 const seta = v => v==null ? '' : (v<0 ? '▼' : '▲');
@@ -1997,7 +2003,7 @@ function renderVendas(){
         return `<div class="vcard ${c.cls}">
           <div class="vtop"><b>${esc(r.nome)}</b><span class="tag ${c.cls==='good'?'promo':(c.cls==='bad'?'low':'warn')}">${c.t}</span></div>
           <div class="vnum">${fmtR(r.receita)} <span class="small muted">${fmtP(r.receita/tot*100)} do total</span></div>
-          <div class="vlfl">${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)} <span class="small muted">LFL receita</span>
+          <div class="vlfl">${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)} <span class="small muted">LFL</span> · <span class="small muted">saldo</span> ${fmtSaldo(r.saldo_receita)}
             ${r.pct_margem!=null?` · margem <b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`:''}</div>
           <div class="small muted" style="margin-top:6px">${fmtN(r.socios)} sócios ${fmtLFL(r.lfl_socios)} · volume ${fmtN(r.volume)} ${fmtLFL(r.lfl_volume)}</div>
           <div class="vacao">${c.acao}</div>
@@ -2018,6 +2024,7 @@ function renderVendas(){
     {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
     {k:'part',l:'% do total',num:true,v:r=>r.receita/totC,f:r=>fmtP(r.receita/totC*100)},
     {k:'lfl_receita',l:'LFL receita',num:true,f:r=>`${semBase(r)?'':seta(r.lfl_receita)} ${fmtLFL(r.lfl_receita,r)}`},
+    {k:'saldo_receita',l:'Saldo receita',num:true,f:r=>fmtSaldo(r.saldo_receita)},
     {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
     {k:'margem',l:'Margem R$',num:true,f:r=>fmtR(r.margem)},
     {k:'socios',l:'Sócios',num:true,f:r=>`${fmtN(r.socios)} ${fmtLFL(r.lfl_socios)}`},
@@ -2029,19 +2036,35 @@ function renderVendas(){
   $('#vProdCount').textContent = prods.length? `${prods.length} produtos` : '';
   table($('#tProdVendas'),[
     {k:'nome',l:'Produto',f:r=>`${esc(r.nome)}<div class="small muted">${esc(r.cod||'')}</div>`},
-    {k:'receita',l:'Receita',num:true,f:r=>fmtR(r.receita),sort:true},
+    {k:'receita',l:'Receita',num:true,f:r=>r.receita?fmtR(r.receita):'<span class="muted">não vendeu</span>'},
     {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita,r)},
+    {k:'saldo_receita',l:'Saldo receita',num:true,f:r=>fmtSaldo(r.saldo_receita),sort:true},
     {k:'pct_margem',l:'% margem',num:true,f:r=>r.pct_margem==null?'—':`<b style="color:${r.pct_margem<0?'var(--bad)':'var(--good)'}">${(r.pct_margem*100).toFixed(1)}%</b>`},
     {k:'socios',l:'Sócios',num:true,f:r=>fmtN(r.socios)},
     {k:'volume',l:'Volume',num:true,f:r=>fmtN(r.volume)},
   ],prods.slice(0,150));
 
-  $('#vAnalise').innerHTML = analiseVendas(V, deps, cats, tot);
+  const perdas=prods.filter(r=>(r.saldo_receita??0)<0).sort((a,b)=>a.saldo_receita-b.saldo_receita);
+  const perdaTotal=perdas.reduce((a,r)=>a+r.saldo_receita,0);
+  const pararam=perdas.filter(parouVender);
+  table($('#tPerdas'),[
+    {k:'nome',l:'Produto',f:r=>`${esc(r.nome)}${parouVender(r)?' <span class="tag low">parou de vender</span>':''}<div class="small muted">${esc(r.cod||'')}</div>`},
+    {k:'saldo_receita',l:'Saldo receita',num:true,f:r=>fmtSaldo(r.saldo_receita),sort:true},
+    {k:'receita',l:'Receita agora',num:true,f:r=>r.receita?fmtR(r.receita):'<span class="muted">zero</span>'},
+    {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita,r)},
+    {k:'socios',l:'Sócios',num:true,f:r=>fmtN(r.socios)},
+    {k:'volume',l:'Volume',num:true,f:r=>r.volume?fmtN(r.volume):'—'},
+  ],perdas,{sort:'saldo_receita',asc:true});
+  $('#vAnalise').innerHTML = analiseVendas(V, deps, cats, tot, {perdas, perdaTotal, pararam});
 }
 
 /* leitura automática: o que fazer para melhorar a venda */
 /* sem base comparável: LFL = 1 e o saldo é a própria receita (não existia no ano anterior) */
 const semBase = r => r.lfl_receita===1 && Math.abs((r.saldo_receita||0) - (r.receita||0)) < 0.01;
+/* vendia no ano anterior e não vendeu nada neste período */
+const parouVender = r => (!r.receita) && r.lfl_receita===-1;
+const fmtSaldo = v => v==null ? '<span class="muted">—</span>'
+  : `<b style="color:${v<0?'var(--bad)':'var(--good)'}">${v>0?'+':'−'}${fmtR(Math.abs(v)).replace('R$','R$')}</b>`;
 const pctTxt = v => v==null ? '—' : `${v>0?'+':''}${(v*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;
 const share = (r,tot) => tot ? r.receita/tot*100 : 0;
 /* descreve um item com receita, peso e impacto em R$ */
@@ -2052,7 +2075,7 @@ function descItem(r, tot){
   return `<b>${esc(r.nome)}</b> ${fmtR(r.receita)} (${s.toFixed(1)}% da receita) · ${pctTxt(r.lfl_receita)} LFL${saldo!=null?` = ${saldo<0?'perda':'ganho'} de ${fmtR(Math.abs(saldo))}`:''}`;
 }
 
-function analiseVendas(V, deps, cats, tot){
+function analiseVendas(V, deps, cats, tot, pr){
   const C=V.clube, pts=[], per=V.rotulo.toLowerCase();
   const MIN = Math.max(tot*0.01, 1);        // relevância: 1% da receita do período
   const rel = r => r.receita >= MIN;
@@ -2093,6 +2116,14 @@ function analiseVendas(V, deps, cats, tot){
   }
   const irrel = deps.filter(r=>(semBase(r)||(r.saldo_receita??0)>0) && !rel(r));
   if(irrel.length) pts.push(`<span class="muted">Observação: ${irrel.map(r=>esc(r.nome)).join(', ')} aparecem com LFL positivo, mas representam menos de 1% da receita (${irrel.map(r=>fmtR(r.receita)).join(', ')}) — não mudam o resultado do canal.</span>`);
+
+  // 4b) produtos que pararam de vender
+  if(pr && pr.pararam && pr.pararam.length){
+    const top=pr.pararam.slice(0,4);
+    const soma=pr.pararam.reduce((a,r)=>a+r.saldo_receita,0);
+    pts.push(`<b>${pr.pararam.length} produtos que vendiam no ano anterior não venderam nada neste período</b>, somando ${fmtR(Math.abs(soma))} que deixaram de entrar: ${top.map(r=>`${esc(r.nome)} (${fmtR(Math.abs(r.saldo_receita))})`).join('; ')}.
+      <b>Ação:</b> checar se é ruptura de estoque, saída de linha ou simplesmente deixaram de ser oferecidos — e ligar para os sócios que compravam esses itens.`);
+  }
 
   // 5) categorias rentáveis, com o quanto representam
   const topMg = cats.filter(r=>(r.pct_margem??0)>0.05 && r.margem>0).sort((a,b)=>b.margem-a.margem).slice(0,4);
