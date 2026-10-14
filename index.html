@@ -234,7 +234,11 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 
 <!-- ================= GERAL ================= -->
 <section class="view active" id="v-geral">
-  <h2>Visão geral do mês</h2>
+  <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div style="flex:1;min-width:240px"><h2>Visão geral do mês</h2></div>
+    <label style="font-size:12px;color:var(--text-3);font-weight:600;display:flex;flex-direction:column;gap:3px">Período
+      <select id="gPeriodo" style="padding:7px 10px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface);min-width:190px"></select></label>
+  </div>
   <p class="sub">Resumo consolidado dos pedidos do Televendas no período carregado, com os alertas prioritários do dia. Clique em qualquer alerta ou indicador para abrir a lista detalhada.</p>
   <div class="grid kpis" id="kpisGeral"></div>
   <div class="grid row2" style="margin-top:14px">
@@ -542,15 +546,41 @@ const pillCls = s => s==='DISPONIVEL NO PDV' ? 'DISPONIVEL' : s;
 /* períodos: ano atual = ano do último pedido; ano anterior = ano-1, mesmo intervalo de dia/mês */
 const yearOf = o => +o.data.slice(0,4), md = o => o.data.slice(5,10);
 const ANOS = [...new Set(D.orders.map(yearOf))].sort();
-const ANO = ANOS.at(-1), ANT = ANO-1;
-const CY = D.orders.filter(o=>yearOf(o)===ANO);
-const MD0 = CY.length? CY.map(md).sort()[0] : '01-01', MD1 = CY.length? CY.map(md).sort().at(-1) : '12-31';
-const CY_CLUBS = new Set(CY.map(o=>o.clube));
-const ALL_CLUBS = new Set(D.orders.map(o=>o.clube));
-const YOY_EXCL = [...ALL_CLUBS].filter(c=>!CY_CLUBS.has(c));   // clubes sem pedidos do ano atual ficam fora da comparação
-const LYALL = D.orders.filter(o=>yearOf(o)===ANT && CY_CLUBS.has(o.clube));
-const LY = LYALL.filter(o=>md(o)>=MD0 && md(o)<=MD1);
-const HAS_YOY = CY.length>0 && LYALL.length>0;
+const MESES_NOME = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+/* períodos disponíveis: o ano corrente (YTD) e cada mês com pedidos */
+function periodosDisponiveis(){
+  const out=[{id:'ano', rot:`${ANOS.at(-1)} — ano até agora`}];
+  const mm=[...new Set(D.orders.map(o=>o.data.slice(0,7)))].sort().reverse();
+  for(const m of mm){ const [y,n]=m.split('-'); out.push({id:m, rot:`${MESES_NOME[+n-1]}/${y}`}); }
+  return out;
+}
+function periodoAtual(){ try{ return localStorage.getItem('tv_periodo')||'ano'; }catch(e){ return 'ano'; } }
+let ANO, ANT, CY, MD0, MD1, LYALL, LY, CY_CLUBS, ALL_CLUBS, YOY_EXCL, HAS_YOY, PERIODO_ROT, CY_SET, LY_SET, LYALL_SET;
+function aplicaPeriodo(){
+  const sel = periodoAtual();
+  if(sel==='ano'){
+    ANO = ANOS.at(-1); ANT = ANO-1;
+    CY = D.orders.filter(o=>yearOf(o)===ANO);
+    MD0 = CY.length? CY.map(md).sort()[0] : '01-01';
+    MD1 = CY.length? CY.map(md).sort().at(-1) : '12-31';
+    PERIODO_ROT = `${ANO} (${MD0.split('-').reverse().join('/')} a ${MD1.split('-').reverse().join('/')})`;
+  } else {
+    const [y,n] = sel.split('-'); ANO = +y; ANT = ANO-1;
+    CY = D.orders.filter(o=>o.data.slice(0,7)===sel);
+    MD0 = `${n}-01`; MD1 = `${n}-31`;
+    PERIODO_ROT = `${MESES_NOME[+n-1]}/${y}`;
+  }
+  CY_CLUBS = new Set(CY.map(o=>o.clube));
+  ALL_CLUBS = new Set(D.orders.map(o=>o.clube));
+  YOY_EXCL = [...ALL_CLUBS].filter(c=>!CY_CLUBS.has(c));
+  LYALL = D.orders.filter(o=>yearOf(o)===ANT && CY_CLUBS.has(o.clube) && (sel==='ano' || md(o)>=MD0 && md(o)<=MD1));
+  LY = LYALL.filter(o=>md(o)>=MD0 && md(o)<=MD1);
+  HAS_YOY = CY.length>0 && LYALL.length>0;
+  CY_SET = new Set(CY.map(o=>o.pedido));
+  LY_SET = new Set(LY.map(o=>o.pedido));
+  LYALL_SET = new Set(LYALL.map(o=>o.pedido));
+}
+aplicaPeriodo();
 const pct = (a,b) => (b? (a/b-1)*100 : null);
 const deltaHtml = (a,b) => { const d=pct(a,b); if(d==null) return '<span class="muted">sem base</span>'; const c=d<0?'var(--bad)':'var(--good)'; return `<span style="color:${c};font-weight:700">${d>0?'+':''}${d.toLocaleString('pt-BR',{maximumFractionDigits:0})}%</span> vs ${ANT}`; };
 const HOJE = pd(D.meta.hoje);
@@ -606,7 +636,7 @@ function buildClients(){
       return {ean, desc:ls[0].desc, n:okl.length, nTot:ls.length, qtd:q, valor:v, ultPreco:lastL.preco, ultQtd:lastL.qtd, ultData:lastL.data, ultStatus:lastL.status,
               precoTab:st?.preco, estoque:st?.estoque, margem:st?.margem, secao:st?.secao, promo:pv, promoPreco: pv? (tierFor(pv,lastL.qtd)?.[2] ?? bestTier(pv)) : null};
     }).sort((a,b)=>b.valor-a.valor);
-    const fatCY=sum(ok.filter(o=>yearOf(o)===ANO),o=>o.valor), fatLY=sum(ok.filter(o=>yearOf(o)===ANT&&CY_CLUBS.has(o.clube)&&md(o)>=MD0&&md(o)<=MD1),o=>o.valor), fatLYall=sum(ok.filter(o=>yearOf(o)===ANT&&CY_CLUBS.has(o.clube)),o=>o.valor);
+    const fatCY=sum(ok.filter(o=>CY_SET.has(o.pedido)),o=>o.valor), fatLY=sum(ok.filter(o=>LY_SET.has(o.pedido)),o=>o.valor), fatLYall=sum(ok.filter(o=>LYALL_SET.has(o.pedido)),o=>o.valor);
     const yoy = !HAS_YOY?null : (fatLYall>0&&fatCY===0)?'nao' : (fatLY===0&&fatCY>0)?'novo' : (fatLY>0&&fatCY<fatLY*0.7)?'queda' : (fatCY>fatLY)?'cresceu':'estavel';
     out.push({id, num:ords[ords.length-1].cliente, fatCY, fatLY, fatLYall, yoy, nome:ords[ords.length-1].nome, ords, n:ords.length, nOk:ok.length, fat, canc, rej, tot, last, lastOk, diasSem, freq, prox, atraso, score, risco, itens});
   }
@@ -618,19 +648,23 @@ const cliById = () => new Map(CLI.map(c=>[c.id,c]));
 /* ---------------------------------- geral ---------------------------------- */
 function kpi(l,v,d,onclick,cls=''){ return `<div class="kpi ${onclick?'clickable':''} ${cls}" ${onclick?`data-go="${onclick}"`:''}><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d||''}</div></div>`; }
 function renderGeral(){
+  const selP=$('#gPeriodo'), lista=periodosDisponiveis(), atual=periodoAtual();
+  if(selP.options.length!==lista.length) selP.innerHTML=lista.map(p=>`<option value="${p.id}">${p.rot}</option>`).join('');
+  selP.value = lista.some(p=>p.id===atual) ? atual : 'ano';
+  selP.onchange = ()=>{ try{ localStorage.setItem('tv_periodo', selP.value); }catch(e){} aplicaPeriodo(); CLI=buildClients(); renderIntel(); if(HAS_YOY) renderYoy(); renderGeral(); };
   const o=CY, ok=o.filter(x=>OK.has(x.status)), canc=o.filter(x=>x.status==='CANCELADO'), rej=o.filter(x=>x.status==='REJEITADO');
   const fat=sum(ok,x=>x.valor), vc=sum(canc,x=>x.valor), vr=sum(rej,x=>x.valor);
   const conv = ok.length/o.length*100;
   const lok=LY.filter(x=>OK.has(x.status)), lfat=sum(lok,x=>x.valor), lvc=sum(LY.filter(x=>x.status==='CANCELADO'),x=>x.valor), lvr=sum(LY.filter(x=>x.status==='REJEITADO'),x=>x.valor);
-  $('#v-geral h2').textContent = `Visão geral — ${ANO}` + (CY.length? ` (${fmtD(CY.map(x=>x.data).sort()[0])} a ${fmtD(CY.map(x=>x.data).sort().at(-1))})`:'');
-  $('#v-geral .sub').innerHTML = HAS_YOY ? `Comparado com o <b>mesmo período de ${ANT}</b> (${MD0.split('-').reverse().join('/')} a ${MD1.split('-').reverse().join('/')}). Clique em qualquer alerta ou indicador para abrir a lista detalhada.` : `Sem pedidos de ${ANT} para comparar neste clube. Clique em qualquer alerta ou indicador para abrir a lista.`;
+  $('#v-geral h2').textContent = `Visão geral — ${PERIODO_ROT}`;
+  $('#v-geral .sub').innerHTML = HAS_YOY ? `Comparado com o <b>mesmo período de ${ANT}</b>. Clique em qualquer alerta ou indicador para abrir a lista detalhada.` : `Sem pedidos de ${ANT} para comparar neste clube. Clique em qualquer alerta ou indicador para abrir a lista.`;
   $('#kpisGeral').innerHTML = [
     kpi('Faturado', fmtR(fat), HAS_YOY? deltaHtml(fat,lfat)+` · ${ok.length} pedidos` : `${ok.length} pedidos · ticket médio ${fmtR(fat/ok.length)}`),
     kpi('Cancelado', fmtR(vc), (HAS_YOY? deltaHtml(vc,lvc)+' · ':'')+`${canc.length} pedidos`, 'intel'),
     kpi('Rejeitado', fmtR(vr), (HAS_YOY? deltaHtml(vr,lvr)+' · ':'')+`${rej.length} pedidos`, 'intel'),
     kpi('Conversão de pedidos', fmtP(conv), HAS_YOY? `${ANT}: ${fmtP(lok.length/LY.length*100)} · ${ok.length} de ${o.length} pedidos` : `${ok.length} de ${o.length} pedidos viraram venda`),
-    kpi(`Sócios com compra em ${ANO}`, CLI.filter(c=>c.fatCY>0).length, HAS_YOY? `${ANT} mesmo período: ${CLI.filter(c=>c.fatLY>0).length} · <span style="color:var(--bad)">${CLI.filter(c=>c.yoy==='nao').length} não voltaram</span>` : `${CLI.filter(c=>!c.nOk).length} só cancel./rejeit.`, 'yoy'),
-    kpi('Risco alto de perda', CLI.filter(c=>c.risco==='alto').length, `sócios · ${fmtR(sum(CLI.filter(c=>c.risco==='alto'),c=>c.fat))} faturados no período carregado`, 'intel','')
+    kpi(`Sócios com compra em ${PERIODO_ROT.split(' ')[0]}`, CLI.filter(c=>c.fatCY>0).length, HAS_YOY? `${ANT} mesmo período: ${CLI.filter(c=>c.fatLY>0).length} · <span style="color:var(--bad)">${CLI.filter(c=>c.yoy==='nao').length} não voltaram</span>` : `${CLI.filter(c=>!c.nOk).length} só cancel./rejeit.`, 'yoy'),
+    kpi('Risco alto de perda', CLI.filter(c=>c.risco==='alto').length, `sócios · ${fmtR(sum(CLI.filter(c=>c.risco==='alto'),c=>c.fat))} faturados no histórico todo`, 'intel','')
   ].join('');
   // chart dias
   const dm = new Map();
@@ -641,8 +675,8 @@ function renderGeral(){
   const vig = D.promos.filter(p=>isVig(p));
   const nao=CLI.filter(c=>c.yoy==='nao'), itNao=HAS_YOY? yoyItems().filter(x=>x.st==='nao') : [];
   const alerts = [
-    ...(HAS_YOY?[{c:'bad', ic:'↩', b:`${nao.length} sócios compraram em ${ANT} e ainda não compraram em ${ANO}`, s:`${fmtR(sum(nao,c=>c.fatLYall))} faturados com eles no ano anterior — lista de reativação`, go:'yoy', set:()=>{$('#ySit').value='nao'}},
-      {c:'warn', ic:'▤', b:`${itNao.length} itens vendidos em ${ANT} sem nenhuma venda em ${ANO}`, s:`${fmtR(sum(itNao,x=>x.lyV))} no mesmo período do ano anterior`, go:'yoy', set:()=>{$('#yiSit').value='nao'}},
+    ...(HAS_YOY?[{c:'bad', ic:'↩', b:`${nao.length} sócios compraram no mesmo período de ${ANT} e não compraram em ${PERIODO_ROT.split(' ')[0]}`, s:`${fmtR(sum(nao,c=>c.fatLYall))} faturados com eles no ano anterior — lista de reativação`, go:'yoy', set:()=>{$('#ySit').value='nao'}},
+      {c:'warn', ic:'▤', b:`${itNao.length} itens vendidos no mesmo período de ${ANT} e sem venda agora`, s:`${fmtR(sum(itNao,x=>x.lyV))} no mesmo período do ano anterior`, go:'yoy', set:()=>{$('#yiSit').value='nao'}},
       {c:'warn', ic:'▼', b:`${CLI.filter(c=>c.yoy==='queda').length} sócios com queda > 30% vs ${ANT}`, s:'Comprando menos que no mesmo período do ano passado', go:'yoy', set:()=>{$('#ySit').value='queda'}}]:[]),
     {c:'bad', ic:'☎', b:`${CLI.filter(c=>c.atraso!=null&&c.atraso>0).length} sócios com recompra atrasada`, s:'Intervalo habitual entre pedidos já ultrapassado — ligar hoje', go:'carteira', set:()=>{$('#cSit').value='atrasado'}},
     {c:'bad', ic:'⚠', b:`${CLI.filter(c=>!c.nOk).length} sócios pediram e nada foi faturado`, s:`${fmtR(sum(CLI.filter(c=>!c.nOk),c=>c.tot))} em pedidos cancelados/rejeitados sem recuperação`, go:'carteira', set:()=>{$('#cSit').value='perdido'}},
