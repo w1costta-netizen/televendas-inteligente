@@ -366,6 +366,8 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
       </select></label>
       <label>Sócios por vendedor<input type="number" id="fQtd" value="5" min="1" max="50" style="width:110px"></label>
       <button class="btn primary" id="fGerar" style="align-self:flex-end">Gerar listas</button>
+      <label style="flex:1 1 100%">Aviso automático aos gestores (URL de webhook — Teams, Power Automate, Zapier…)
+        <input id="fWebhook" placeholder="https://… (deixe vazio para avisar manualmente)"></label>
       <button class="btn" id="fLimpar" style="align-self:flex-end">Limpar concluídos</button>
     </div>
     <p class="small muted" style="margin:10px 0 0">Prioriza quem já teve tentativa anterior e, em seguida, o maior potencial (faturamento do ano anterior). Quem foi contatado nos últimos 30 dias não volta para a fila.</p>
@@ -1775,7 +1777,10 @@ async function semeiaVendedores(){
 async function autoFila(){
   const meu = vendedorNome(); if(!meu) return;
   const cfg = window.__filaCfg || {criterio:'ano', qtd:5};
-  const pend = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu && !['contatado','visita'].includes(situacao(k).st));
+  const minhas = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu);
+  // só carrega sozinho quando a lista está vazia; depois de concluída, quem puxa é o vendedor
+  if(minhas.length) return;
+  const pend = minhas.filter(([k])=>!['contatado','visita'].includes(situacao(k).st));
   if(pend.length >= cfg.qtd) return;
   const naFila = new Set(Object.keys(FILA));
   const faltam = cfg.qtd - pend.length;
@@ -1789,12 +1794,12 @@ async function autoFila(){
   }
   if(n) await salvaFila();
 }
-function cardTarefa(c, s, i){
+function cardTarefa(c, s, i, pronto){
   const cad = CADASTRO[c.id] || {};
   const tel = cad.telefone || '';
   const promo = c.itens.filter(x=>x.promo).slice(0,2);
   const compra = c.itens.filter(x=>x.n).slice(0,3).map(x=>x.desc).join(', ') || '—';
-  const feito = s.st==='contatado' || s.st==='visita';
+  const feito = pronto!==undefined ? pronto : (s.st==='contatado' || s.st==='visita');
   return `<div class="tarefa ${feito?'feita':''}" data-card="${esc(c.id)}">
     <div class="tnum">${feito?'✓':i}</div>
     <div class="tinfo">
@@ -1816,6 +1821,105 @@ function cardTarefa(c, s, i){
       <button class="btn primary sm" data-tent="${esc(c.id)}">Registrar contato</button>
     </div>
   </div>`;
+}
+
+/* ---------------------------------- conclusão de rodada e aviso ---------------------------------- */
+const hojeISO = () => new Date().toISOString().slice(0,10);
+/* tarefa do dia cumprida: registrou alguma tentativa hoje, ou o sócio já saiu da fila */
+const feitoHoje = x => ['contatado','visita'].includes(x.s.st) || x.s.acs.some(a=>a.quando.slice(0,10)===hojeISO());
+async function marcaRodada(vend, qtd){
+  const h = (await idbGet('rodadas')) || {};
+  const k = `${hojeISO()}|${vend}`;
+  h[k] = (h[k]||0) + 1;
+  await idbSet('rodadas', h);
+  return h[k];
+}
+async function rodadasHoje(vend){
+  const h = (await idbGet('rodadas')) || {};
+  return h[`${hojeISO()}|${vend}`] || 0;
+}
+/* quem deve ser avisado */
+const gestores = () => VENDEDORES.filter(v=>['Líder','Gerente geral'].includes(v.perfil));
+/* 1) aviso no próprio aparelho (funciona sem servidor) */
+function notificaLocal(titulo, corpo){
+  try{
+    if(!('Notification' in window)) return;
+    if(Notification.permission==='granted'){ new Notification(titulo,{body:corpo, icon:'icon-192.png', tag:'tv-rodada'}); }
+    else if(Notification.permission!=='denied'){ Notification.requestPermission().then(p=>{ if(p==='granted') new Notification(titulo,{body:corpo, icon:'icon-192.png', tag:'tv-rodada'}); }); }
+  }catch(e){}
+}
+/* 2) aviso aos gestores por webhook (Teams, Power Automate, Apps Script, Zapier...) */
+async function avisaWebhook(evento){
+  let url=null; try{ url = localStorage.getItem('tv_webhook'); }catch(e){}
+  if(!url) return false;
+  try{
+    await fetch(url, {method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(evento)});
+    return true;
+  }catch(e){ return false; }
+}
+/* 3) fallback sem infraestrutura: mensagem pronta para o vendedor enviar */
+function textoAviso(vend, qtd, resumo){
+  return `✅ ${vend} concluiu a rodada de ${qtd} contatos no Televendas.\n`
+       + `${resumo}\n`
+       + `${new Date().toLocaleString('pt-BR')}`;
+}
+/* tela de parabéns */
+async function celebraRodada(vend, itens){
+  const qtd = itens.length;
+  const hoje = hojeISO();
+  const falou = itens.filter(x=>x.s.acs.some(a=>a.contato===true && a.quando.slice(0,10)===hoje)).length;
+  const semResposta = itens.filter(x=>!x.s.acs.some(a=>a.contato===true && a.quando.slice(0,10)===hoje)).length;
+  const pedidos = itens.filter(x=>x.s.acs.some(a=>a.resultado==='Pedido fechado' && a.quando.slice(0,10)===hojeISO())).length;
+  const visitas = itens.filter(x=>x.s.st==='visita').length;
+  const n = await marcaRodada(vend, qtd);
+  const resumo = `${falou} de ${qtd} atendidos${semResposta?` · ${semResposta} sem resposta`:''} · ${pedidos} pedido(s) fechado(s)${visitas?` · ${visitas} para visita presencial`:''}`;
+  const evento = {tipo:'rodada_concluida', vendedor:vend, quantidade:qtd, atendidos:falou,
+                  pedidosFechados:pedidos, paraVisita:visitas, rodadaDoDia:n,
+                  quando:new Date().toISOString(), app:location.href.split('?')[0]};
+  notificaLocal(`${vend} concluiu a rodada`, resumo);
+  const enviou = await avisaWebhook(evento);
+  const texto = textoAviso(vend, qtd, resumo);
+  const gs = gestores();
+  document.body.insertAdjacentHTML('beforeend', `<div id="celebra" style="position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:16px">
+    <div class="card" style="width:min(480px,100%);text-align:center">
+      <div style="font-size:46px;line-height:1">🎉</div>
+      <h3 style="margin:6px 0 4px;font-size:20px;text-transform:none;letter-spacing:0;color:var(--text)">Parabéns, ${esc(vend.split(' ')[0])}!</h3>
+      <p style="margin:0 0 4px">Você concluiu os <b>${qtd} contatos</b> da sua lista.</p>
+      <p class="small muted" style="margin:0 0 14px">${esc(resumo)}${n>1?` · ${n}ª rodada de hoje`:''}</p>
+      <div class="note" style="text-align:left">${enviou
+        ? '<b>Gestores avisados.</b> O aviso foi enviado automaticamente.'
+        : (gs.length
+            ? `<b>Avise seu gestor:</b> ${gs.map(g=>esc(g.nome)).join(', ')}.`
+            : '<b>Nenhum gestor cadastrado.</b> Peça para cadastrarem o líder em Equipe para o aviso automático.')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:14px">
+        ${!enviou ? `<button class="btn" id="celWa">Avisar por WhatsApp</button><button class="btn" id="celCopy">Copiar aviso</button>` : ''}
+        <button class="btn primary" id="celMais">Puxar mais ${qtd} sócios</button>
+        <button class="btn" id="celFechar">Fechar</button>
+      </div>
+    </div></div>`);
+  $('#celFechar').onclick=()=>$('#celebra').remove();
+  const bm=$('#celMais'); if(bm) bm.onclick=async()=>{ $('#celebra').remove(); await puxarMais(); };
+  const bw=$('#celWa'); if(bw) bw.onclick=()=>{ const tel=(gs.find(g=>g.telefone)||{}).telefone||''; window.open(`https://wa.me/${telWa(tel)}?text=${encodeURIComponent(texto)}`,'_blank'); };
+  const bc=$('#celCopy'); if(bc) bc.onclick=async()=>{ try{ await navigator.clipboard.writeText(texto); bc.textContent='Copiado ✓'; }catch(e){} };
+}
+/* puxa a próxima leva, respeitando o tamanho configurado */
+async function puxarMais(){
+  const meu = vendedorNome(); if(!meu) return;
+  const cfg = window.__filaCfg || {criterio:'ano', qtd:5};
+  // arquiva os já trabalhados desta rodada para a lista ficar limpa
+  for(const [k,f] of Object.entries(FILA))
+    if(f.vendedor===meu && ['contatado','visita'].includes(situacao(k).st)) delete FILA[k];   // tentativas sem resposta continuam para o próximo dia
+  const naFila = new Set(Object.keys(FILA)); const hoje = hojeISO(); let n=0;
+  for(const x of candidatos(cfg.criterio)){
+    if(n>=cfg.qtd) break;
+    if(naFila.has(x.c.id)) continue;
+    FILA[x.c.id] = {vendedor:meu, desde:hoje, rodada:1, criterio:cfg.criterio};
+    n++;
+  }
+  if(n){ await salvaFila(); }
+  await renderFila();
+  return n;
 }
 
 /* ---- render ---- */
@@ -1841,9 +1945,17 @@ async function renderFila(){
   };
   const meus = Object.entries(FILA).filter(([k,f])=>f.vendedor===meu).map(([k])=>CLI.find(c=>c.id===k)).filter(Boolean)
     .map(c=>({c, s:situacao(c.id)})).sort((a,b)=>{
-      const fa=['contatado','visita'].includes(a.s.st)?1:0, fb=['contatado','visita'].includes(b.s.st)?1:0;
+      const fa=feitoHoje(a)?1:0, fb=feitoHoje(b)?1:0;
       return fa-fb || (b.c.fatLYall||b.c.fat)-(a.c.fatLYall||a.c.fat); });
-  const feitos = meus.filter(x=>['contatado','visita'].includes(x.s.st)).length;
+  const feitos = meus.filter(feitoHoje).length;
+  // rodada concluída: todos os sócios da lista foram trabalhados
+  if(meu && meus.length && feitos===meus.length && !window.__celebrando){
+    const chave = meu+'|'+meus.map(x=>x.c.id).sort().join('|');
+    if(window.__ultimaRodada !== chave){
+      window.__ultimaRodada = chave; window.__celebrando = true;
+      setTimeout(async()=>{ try{ await celebraRodada(meu, meus); } finally { window.__celebrando=false; } }, 300);
+    }
+  }
   const pEu = souPessoa();
   $('#tituloMinhaLista').innerHTML = pEu ? `<span style="display:inline-flex;align-items:center;gap:8px;vertical-align:middle">${avatar(pEu,28)} Minha lista de hoje</span>` : 'Minha lista de hoje';
   $('#progBar').style.width = meus.length? (feitos/meus.length*100)+'%' : '0%';
@@ -1852,7 +1964,7 @@ async function renderFila(){
       : 'Nenhuma pessoa cadastrada. Vá na aba <b>Equipe</b> para cadastrar vendedores e líderes, ou use <b>“Sou”</b> → <b>➕ Cadastrar outro nome</b>.')
     : meus.length ? `<b>${feitos} de ${meus.length}</b> concluídos hoje · ligue na ordem, de cima para baixo. Registre também quando não conseguir falar.`
     : 'Nenhum sócio pendente no momento. Use “Puxar mais sócios” para carregar a próxima leva.';
-  $('#minhaLista').innerHTML = meus.length ? meus.map((x,i)=>cardTarefa(x.c, x.s, i+1)).join('')
+  $('#minhaLista').innerHTML = meus.length ? meus.map((x,i)=>cardTarefa(x.c, x.s, i+1, feitoHoje(x))).join('')
     : (meu? '<div class="empty">Sem sócios na sua lista. Clique em “Puxar mais sócios”.</div>' : '');
   $('#minhaLista').querySelectorAll('[data-tent]').forEach(b=>b.onclick=()=>openTentativa(CLI.find(c=>c.id===b.dataset.tent)));
   $('#minhaLista').querySelectorAll('[data-telok]').forEach(b=>b.onclick=()=>{ const inp=$('#minhaLista').querySelector(`[data-tel="${CSS.escape(b.dataset.telok)}"]`); if(inp&&inp.value.trim()) salvaTelefone(b.dataset.telok, inp.value); });
@@ -2356,11 +2468,11 @@ $('#vPeriodo').addEventListener('change',renderVendas);
 $('#vAdd').onclick=async()=>{ const n=$('#vNome').value.trim(); if(!n) return; VENDEDORES.push({nome:n, email:$('#vEmail').value.trim()}); await salvaVendedores(); $('#vNome').value=''; $('#vEmail').value=''; renderFila(); };
 $('#fGerar').onclick=()=>gerarFila($('#fCrit').value, +$('#fQtd').value||5);
 $('#fMais').onclick=async()=>{ window.__filaCfg={criterio:$('#fCrit').value||'ano', qtd:(+$('#fQtd').value||5)}; await idbSet('filaCfg', window.__filaCfg);
-  const meu=vendedorNome(); if(!meu){ alert('Escolha seu nome em “Sou” antes de puxar a lista.'); return; }
-  const cfg=window.__filaCfg, naFila=new Set(Object.keys(FILA)), hoje=new Date().toISOString().slice(0,10); let n=0;
-  for(const x of candidatos(cfg.criterio)){ if(n>=cfg.qtd) break; if(naFila.has(x.c.id)) continue; FILA[x.c.id]={vendedor:meu,desde:hoje,rodada:1,criterio:cfg.criterio}; n++; }
-  await salvaFila(); await renderFila(); };
+  if(!vendedorNome()){ alert('Escolha seu nome em “Sou” antes de puxar a lista.'); return; }
+  const n=await puxarMais(); if(!n) alert('Não há mais sócios disponíveis com o critério escolhido.'); };
 $('#fLimpar').onclick=limparConcluidos;
+try{ $('#fWebhook').value = localStorage.getItem('tv_webhook')||''; }catch(e){}
+$('#fWebhook').onchange=()=>{ try{ localStorage.setItem('tv_webhook', $('#fWebhook').value.trim()); }catch(e){} };
 $('#btnExpCad').onclick=exportaCadastro;
 $('#eqNovo').onclick=()=>openPessoa(null);
 $('#eqExp').onclick=exportaEquipe;
