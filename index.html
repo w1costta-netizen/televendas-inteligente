@@ -177,6 +177,14 @@ h3.veixo{font-size:13px;letter-spacing:.3px;color:var(--text);border-bottom:2px 
   .filters{gap:6px} .filters input,.filters select{min-width:0;width:100%}
   .filters label{flex:1 1 140px}
 }
+#tCart th,#tCart td{padding:6px 8px;font-size:12.5px}
+#tCart .small{font-size:11px;line-height:1.25}
+#tCart .telnum{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12.5px}
+#tCart .telacoes{display:flex;gap:3px;justify-content:flex-end;margin-top:2px}
+#tCart .telacoes .btn{padding:2px 7px;font-size:11px}
+#tCart .telinput{width:92px;padding:2px 6px;font-size:11px}
+#tCart .pill{font-size:10.5px;padding:1px 6px}
+#tCart .risk{font-size:11.5px;white-space:nowrap}
 .tarefa{display:grid;grid-template-columns:40px 1fr auto;gap:14px;align-items:flex-start;padding:14px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:8px}
 .tarefa.feita{opacity:.55;background:var(--surface-2)}
 .tarefa .tnum{width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800}
@@ -782,21 +790,17 @@ function renderCarteira(){
   $('#cCount').innerHTML = `${rows.length} sócios${ROLE==='vendedor'?'':` · ${fmtR(sum(rows,c=>c.fat))} faturados`} · <b>${comTel}</b> com telefone${rows.length-comTel?` · <span style="color:var(--bad)">${rows.length-comTel} sem</span>`:''}`;
   const colsCart = [
     {k:'nome',l:'Sócio',f:c=>`<b>${esc(c.nome)}</b><div class="small muted">nº ${c.num}${c.yoy==='nao'?' · <span class="tag low">sem compra em '+PER_CURTO()+'</span>':c.yoy==='novo'?' · <span class="tag promo">novo</span>':''}</div>`},
-    {k:'n',l:'Pedidos',num:true,f:c=>`${c.nOk}<span class="muted">/${c.n}</span>`},
-    {k:'fat',l:'Faturado',num:true,f:c=>fmtR(c.fat),sort:true},
-    {k:'perd',l:'Perdido',num:true,v:c=>c.canc+c.rej,f:c=>c.canc+c.rej?`<span style="color:var(--bad)">${fmtR(c.canc+c.rej)}</span>`:'—'},
-    {k:'lastOk',l:'Última compra',num:true,f:c=>c.lastOk?fmtD(c.lastOk):`<span class="muted">nunca</span>`},
-    {k:'diasSem',l:'Dias s/ comprar',num:true},
-    {k:'freq',l:'Freq. (dias)',num:true,f:c=>c.freq!=null?c.freq.toFixed(1):'—'},
-    {k:'atraso',l:'Recompra',num:true,f:c=>c.atraso==null?'—':c.atraso>0?`<span class="pill REJEITADO">atrasada ${c.atraso}d</span>`:`<span class="pill FATURADO">em ${-c.atraso}d</span>`},
+    {k:'n',l:'Pedidos',num:true,f:c=>`${c.nOk}<span class="muted">/${c.n}</span><div class="small muted">${c.itens.length} itens</div>`},
+    {k:'fat',l:'Faturado',num:true,f:c=>`${fmtR(c.fat)}${c.canc+c.rej?`<div class="small" style="color:var(--bad)">−${fmtR(c.canc+c.rej)} perdido</div>`:''}`,sort:true},
+    {k:'lastOk',l:'Última compra',num:true,f:c=>c.lastOk?`${fmtD(c.lastOk)}<div class="small muted">${c.diasSem} dias</div>`:`<span class="muted">nunca</span>`},
+    {k:'atraso',l:'Recompra',num:true,f:c=>`${c.atraso==null?'<span class="muted">—</span>':c.atraso>0?`<span class="pill REJEITADO">atrasada ${c.atraso}d</span>`:`<span class="pill FATURADO">em ${-c.atraso}d</span>`}${c.freq!=null?`<div class="small muted">a cada ${c.freq.toFixed(0)}d</div>`:''}`},
     {k:'score',l:'Risco',f:riskHtml},
-    {k:'itens',l:'Itens',num:true,v:c=>c.itens.length},
     {k:'tel',l:'Telefone',v:c=>(CADASTRO[c.id]?.telefone?1:0),f:c=>{const t=CADASTRO[c.id]?.telefone;
-      return t ? `<div style="font-weight:700;font-variant-numeric:tabular-nums">${esc(t)}</div><a class="btn sm" href="tel:${telLimpo(t)}">☎</a> <a class="btn sm" href="https://wa.me/${telWa(t)}" target="_blank" rel="noopener">WhatsApp</a>`
-               : `<input class="btn sm" data-telcart="${esc(c.id)}" placeholder="(81) 9…" style="width:120px"><button class="btn sm" data-telcartok="${esc(c.id)}">Salvar</button>`;}},
+      return t ? `<div class="telnum">${esc(t)}</div><div class="telacoes"><a class="btn sm" href="tel:${telLimpo(t)}" title="Ligar">☎</a><a class="btn sm" href="https://wa.me/${telWa(t)}" target="_blank" rel="noopener" title="WhatsApp">zap</a></div>`
+               : `<div class="telacoes"><input class="btn sm telinput" data-telcart="${esc(c.id)}" placeholder="(81) 9…"><button class="btn sm" data-telcartok="${esc(c.id)}" title="Salvar telefone">ok</button></div>`;}},
     {k:'acao',l:'Contato',num:true,v:c=>situacao(c.id).tentativas,f:c=>{const s=situacao(c.id); return `<button class="btn sm" data-tentcart="${esc(c.id)}">☎ Registrar</button>${s.acs.length?`<div class="small muted">${s.contatos?'falou '+s.contatos+'x':''}${s.tentativas?` · ${s.tentativas}/${MAX_TENTATIVAS} sem contato`:''}</div>`:''}`;}},
   ];
-  const colsVend = new Set(['fat','perd','score']);
+  const colsVend = new Set(['fat','score']);
   table($('#tCart'), ROLE==='vendedor'? colsCart.filter(c=>!colsVend.has(c.k)) : colsCart, rows, {row:openClient, id:c=>c.id});
   $('#tCart').querySelectorAll('[data-tentcart]').forEach(b=>b.onclick=e=>{ e.stopPropagation(); openTentativa(CLI.find(x=>x.id===b.dataset.tentcart)); });
   $('#tCart').querySelectorAll('[data-telcart],[data-telcartok],a[href^="tel:"],a[href*="wa.me"]').forEach(el=>el.onclick=e=>e.stopPropagation());
