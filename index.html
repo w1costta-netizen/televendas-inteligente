@@ -201,6 +201,26 @@ h3.veixo{font-size:13px;letter-spacing:.3px;color:var(--text);border-bottom:2px 
 .heat .h{color:var(--text-3);text-align:center}
 .tiers{font-size:12px;color:var(--text-2)}
 .tiers span{display:inline-block;margin-right:8px;white-space:nowrap}
+.imp-row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-left-width:4px;border-radius:10px;margin-top:8px;background:var(--surface)}
+.imp-row .ic{font-size:16px;line-height:1.3;width:18px;flex:none;text-align:center}
+.imp-row .nm{flex:1 1 190px;min-width:0}
+.imp-row select{max-width:180px}
+.imp-row .nm b{display:block;word-break:break-all}
+.imp-row.ok{border-left-color:var(--good)} .imp-row.ok .ic{color:var(--good)}
+.imp-row.warn{border-left-color:var(--warn);background:var(--warn-bg)} .imp-row.warn .ic{color:var(--warn)}
+.imp-row.err{border-left-color:var(--bad);background:var(--bad-bg)} .imp-row.err .ic{color:var(--bad)}
+.imp-row.wait{border-left-color:var(--border-2);opacity:.75}
+.imp-row .det{font-size:12px;color:var(--text-2);margin-top:2px}
+.imp-row.err .det{color:var(--bad);font-weight:600}
+.imp-bar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden;margin-top:12px}
+.imp-bar>i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.alerta{display:flex;gap:10px;padding:12px 14px;border-radius:10px;margin-top:14px;align-items:flex-start}
+.alerta.err{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad)}
+.alerta.ok{background:var(--good-bg);color:var(--good);border:1px solid var(--good)}
+.alerta b{display:block;margin-bottom:2px}
+#novoAviso{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:60;display:none;gap:12px;align-items:center;
+  background:var(--surface);border:1px solid var(--accent);border-radius:999px;padding:10px 10px 10px 18px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+#novoAviso.show{display:flex}
 .note{padding:10px 12px;border-radius:8px;background:var(--info-bg);color:var(--info);font-size:12px;margin-bottom:14px}
 .empty{padding:26px;text-align:center;color:var(--text-3)}
 footer{margin-top:30px;color:var(--text-3);font-size:12px;text-align:center}
@@ -224,6 +244,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 <label class="rem"><input type="checkbox" id="rem" checked> Lembrar neste dispositivo</label>
 <div class="err" id="err"></div><button class="btn primary" type="submit" id="loginBtn">Entrar</button>
 <div class="foot">Os dados são descriptografados apenas no seu navegador. Para instalar como aplicativo, use "Instalar" / "Adicionar à tela inicial" no menu do navegador.</div></form></div>
+<div id="novoAviso"><span><b>Dados novos publicados</b> <span class="small muted" id="novoQuando"></span></span><button class="btn primary sm" id="novoBt">Atualizar agora</button><button class="btn sm" id="novoX" title="Agora não">✕</button></div>
 <header class="top">
   <div class="top-inner">
     <div class="brand"><div class="logo">TV</div><div><h1>Televendas Inteligente</h1><small id="clube"></small></div></div>
@@ -1771,6 +1792,8 @@ function baixaEml(para, assunto, html){
 /* lista de trabalho do vendedor — cartões prontos para ligar */
 const telLimpo = t => String(t||'').replace(/\D/g,'');
 const telWa = t => { const d=telLimpo(t); return d? (d.length<=11? '55'+d : d) : ''; };
+// helpers usados pela tela de importação, que roda fora deste escopo
+Object.assign(window, {fmtN, fmtR, fmtD, esc, kpi, mesclaEquipeRemota, salvaVendedores});
 window.__equipePub = () => equipeParaPublicar();
 window.__cadastroPub = () => cadastroParaPublicar();
 window.__aplicaContatos = async function(lista){
@@ -2836,16 +2859,115 @@ function parseContatosRows(rows){
   }
   return out;
 }
-async function importFiles(files, base){
-  const log=[]; let orders=[], promos=[], stockRows=[];
-  for(const f of files){ const n=f.name.toLowerCase(); if(!n.endsWith('.xlsx')){ log.push(`ignorado ${f.name}`); continue; }
-    try{ const rows=await readWorkbook(f);
-      if(n.includes('pedido')){ const head=rows[0].map(x=>String(x??'')); let o; if(head.includes('Operador')||head.includes('EAN')){ const raw=await rawBigCells(f,'D'); o=parsePedidosFlat(rows,raw); } else o=parsePedidosNested(rows); orders.push(...o); log.push(`pedidos · ${f.name}: ${o.length} pedidos`); }
-      else if(n.includes('promoc')){ const p=parsePromosRows(rows); promos.push(...p); log.push(`ofertas · ${f.name}: ${p.length} ofertas`); }
-      else if(n.includes('estoque')){ const e=parseEstoqueRows(rows); e.forEach(x=>x._t=f.lastModified||0); stockRows.push(...e); log.push(`estoque · ${f.name}: ${e.length} SKUs`); }
-      else if(n.includes('contato')||n.includes('cadastro')||n.includes('telefone')||n.includes('socios')||n.includes('sócios')){ const cs=parseContatosRows(rows); const r= window.__aplicaContatos ? await window.__aplicaContatos(cs) : {ok:0,nao:[]}; log.push(`contatos · ${f.name}: ${cs.length} linhas · ${r.ok} sócios atualizados${r.nao.length?` · ${r.nao.length} sem correspondência`:''}`); }
-      else log.push(`ignorado (nome não reconhecido) ${f.name}`);
-    }catch(e){ log.push(`ERRO em ${f.name}: ${e.message}`); }
+const MESES_V = {janeiro:1,fevereiro:2,marco:3,'março':3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
+const CAMPOS_V = ['nome','socios','lfl_socios','ticket','lfl_ticket','gasto','lfl_gasto','volume','lfl_volume','receita','lfl_receita','saldo_receita','margem','saldo_margem','pct_margem'];
+function periodoDeArquivo(nome){
+  const n = nome.toLowerCase();
+  for(const m of Object.keys(MESES_V)) if(n.includes(m)) return {periodo:'mes', mes:MESES_V[m], rotulo:m[0].toUpperCase()+m.slice(1)};
+  return {periodo:'ano', mes:null, rotulo:'Acumulado do ano'};
+}
+function parseVendasRows(rows, nomeArq){
+  const CAB = new Set(['CLUBE','DEPARTAMENTO','CATEGORIA','PRODUTO','LINHA','SUBLINHA']);
+  const nv = v => { if(v==null) return null; const s=String(v).trim(); if(!s||s==='nan'||s==='-') return null; const f=parseFloat(s); return isNaN(f)?null:f; };
+  let nivel=null; const out={clube:null, departamentos:[], categorias:[], produtos:[]};
+  for(const linha of rows){
+    const nome = String((linha&&linha[0])??'').trim();
+    if(CAB.has(nome)){ nivel=nome; continue; }
+    if(!nome || nome==='nan' || !nivel) continue;
+    const reg={}; for(let i=0;i<CAMPOS_V.length && i<linha.length;i++) reg[CAMPOS_V[i]] = i===0 ? nome : nv(linha[i]);
+    if(nivel==='CLUBE') out.clube=reg;
+    else if(nivel==='DEPARTAMENTO') out.departamentos.push(reg);
+    else { const m=/^(\d{4,8})\s*-\s*(.+)$/.exec(nome);
+           if(m){ reg.nome=m[2].trim(); reg.cod=m[1]; out.produtos.push(reg); } else out.categorias.push(reg); }
+  }
+  return Object.assign(out, periodoDeArquivo(nomeArq));
+}
+function parseOperadoresRows(rows){
+  const tit = s => s===s.toUpperCase() ? s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()) : s;
+  const out=[];
+  for(let i=1;i<rows.length;i++){
+    const r=rows[i]||[]; const nome=String(r[0]??'').trim(), login=String(r[1]??'').trim();
+    if(!login || login.toLowerCase()==='nan') continue;
+    out.push({nome: tit(nome)||login, usuario:login, clube: r[3]!=null?IMP.clube(r[3]):null,
+              vendas: typeof r[2]==='number'?r[2]:null, perfil:'Vendedor', origem:'planilha', ativo:true, email:'', telefone:''});
+  }
+  return out;
+}
+
+const TIPOS = {
+  pedidos:  {rot:'Pedidos',             dica:'Pedidos-… · Novo-Pedidos-…'},
+  promos:   {rot:'Ofertas / promoções', dica:'Promocoes-…'},
+  estoque:  {rot:'Estoque',             dica:'Relatorio-Estoque-…'},
+  contatos: {rot:'Cadastro de sócios',  dica:'Contatos-… · Social-PJ-… · Cadastro-…'},
+  vendas:   {rot:'Venda realizada (VENDAS 2.0)', dica:'(VENDAS 2.0)…'},
+  operadores:{rot:'Operadores / vendedores',     dica:'Operadores-… · …performance…'},
+};
+function detectaTipo(nome){
+  const n = nome.toLowerCase();
+  if(n.startsWith('operadores') || n.includes('performance')) return 'operadores';
+  if(n.includes('(vendas 2.0)') || n.startsWith('vendas')) return 'vendas';
+  if(n.includes('pedido')) return 'pedidos';
+  if(n.includes('promoc')) return 'promos';
+  if(n.includes('estoque')) return 'estoque';
+  if(/contato|cadastro|telefone|social|s[óo]cio/.test(n)) return 'contatos';
+  return null;
+}
+const EXT_OK = ['xlsx','xls','csv'];
+const tamArq = b => b < 1024*1024 ? (b/1024).toFixed(0)+' KB' : (b/1048576).toFixed(1)+' MB';
+
+async function importFiles(entradas, base, prog){
+  let orders=[], promos=[], stockRows=[], vendasNovas=[], opsNovos=[];
+  const itens = entradas.map(e=>({nome:e.file.name, tam:e.file.size, tipo:e.tipo}));
+  for(let k=0;k<entradas.length;k++){
+    const e = entradas[k], f = e.file, it = itens[k];
+    if(prog) prog(k, entradas.length, f.name);
+    const ext = (f.name.split('.').pop()||'').toLowerCase();
+    if(!EXT_OK.includes(ext)){ it.erro = `Formato .${ext} não é lido pelo app. Abra na plataforma e exporte como .xlsx.`; continue; }
+    if(!e.tipo){ it.erro = 'Não dá para saber o que é este arquivo pelo nome. Escolha o tipo na lista ao lado.'; continue; }
+    try{
+      const rows = await readWorkbook(f);
+      if(!rows || rows.length < 2) throw new Error('A planilha está vazia (ou só tem o cabeçalho).');
+      if(e.tipo==='pedidos'){
+        const head = rows[0].map(x=>String(x??''));
+        let o; if(head.includes('Operador')||head.includes('EAN')){ const raw=await rawBigCells(f,'D'); o=parsePedidosFlat(rows,raw); } else o=parsePedidosNested(rows);
+        if(!o.length) throw new Error('Nenhum pedido reconhecido. Confira se é mesmo o relatório de Pedidos e se o cabeçalho está na primeira linha.');
+        orders.push(...o); it.resumo = `${fmtN(o.length)} pedidos`;
+        const dts = o.map(x=>{ try{ return IMP.isoT(x.data).slice(0,10); }catch(e){ return ''; } }).filter(Boolean).sort();
+        if(dts.length) it.resumo += ` · ${fmtD(dts[0])} a ${fmtD(dts.at(-1))}`;
+        if(ext!=='xlsx') it.aviso = 'Em .'+ext+' o nº do sócio de 17 dígitos pode perder precisão — prefira .xlsx.';
+      }
+      else if(e.tipo==='promos'){
+        const p = parsePromosRows(rows);
+        if(!p.length) throw new Error('Nenhuma oferta reconhecida neste arquivo.');
+        promos.push(...p); it.resumo = `${fmtN(p.length)} ofertas`;
+      }
+      else if(e.tipo==='estoque'){
+        const s = parseEstoqueRows(rows);
+        if(!s.length) throw new Error('Nenhum SKU reconhecido neste arquivo.');
+        s.forEach(x=>x._t=f.lastModified||0); stockRows.push(...s);
+        const cl=[...new Set(s.map(x=>x.clube))].filter(Boolean);
+        it.resumo = `${fmtN(s.length)} SKUs${cl.length?` · clube ${cl.join(', ')}`:''}`;
+      }
+      else if(e.tipo==='vendas'){
+        const v = parseVendasRows(rows, f.name);
+        if(!v.clube) throw new Error('Não achei o bloco CLUBE nesta planilha — confira se é mesmo o relatório VENDAS 2.0.');
+        vendasNovas.push(v);
+        it.resumo = `${v.rotulo} · ${fmtR(v.clube.receita||0)} · ${v.departamentos.length} dept / ${v.categorias.length} cat / ${v.produtos.length} produtos`;
+      }
+      else if(e.tipo==='operadores'){
+        const ops = parseOperadoresRows(rows);
+        if(!ops.length) throw new Error('Nenhum operador reconhecido (esperado: nome, login, vendas, clube).');
+        opsNovos.push(...ops);
+        it.resumo = `${ops.length} vendedor(es): ${ops.map(o=>o.nome).join(', ')}`;
+      }
+      else if(e.tipo==='contatos'){
+        const cs = parseContatosRows(rows);
+        if(!cs.length) throw new Error('Não achei as colunas de nome/nº do sócio nesta planilha.');
+        const r = window.__aplicaContatos ? await window.__aplicaContatos(cs) : {ok:0,nao:[]};
+        it.resumo = `${fmtN(cs.length)} linhas · ${fmtN(r.ok)} sócios atualizados`;
+        if(r.nao.length) it.aviso = `${fmtN(r.nao.length)} linhas sem sócio correspondente (nome diferente do cadastro).`;
+      }
+    }catch(err){ it.erro = err && err.message ? err.message : String(err); }
   }
   // ---- normaliza pedidos
   for(const o of orders){ o.clube=IMP.clube(o.clube); }
@@ -2854,7 +2976,7 @@ async function importFiles(files, base){
   const ordMap=new Map(); if(F) for(const o of F.orders) ordMap.set(o.pedido,o);
   for(const o of orders){ ordMap.set(o.pedido,{pedido:o.pedido, clube:o.clube, clube_nome:o.clube_nome, data:IMP.isoT(o.data), cliente:o.cliente, ckey:IMP.norm(o.nome), nome:o.nome, valor:o.valor, status:o.status, operador:o.operador||null, margem_ped:o.margem_ped??null, motivo_ped:o.motivo_ped||null, itens:o.itens}); }
   const od=[...ordMap.values()].sort((a,b)=>b.data.localeCompare(a.data));
-  if(!od.length) throw new Error('Nenhum pedido carregado. Verifique se há um arquivo de pedidos.');
+  if(!od.length){ const e=new Error('Nenhum pedido foi carregado. Inclua ao menos um arquivo de Pedidos — sem ele não dá para montar a base.'); e.itens=itens; throw e; }
   // ---- estoque: por clube, importação substitui o clube inteiro
   const impClubs=new Set(stockRows.map(s=>s.clube));
   const stockAll = (F? F.stock.filter(s=>!impClubs.has(s.clube)) : []);
@@ -2884,9 +3006,17 @@ async function importFiles(files, base){
   const now=new Date();
   const meta={clubes:[...nomes].map(([cod,nome])=>({cod,nome})).sort((a,b)=>a.cod.localeCompare(b.cod)), pedidos_periodo:[datas[0],datas.at(-1)], extracao_estoque: ults.at(-1)||datas.at(-1), ref_pedidos:datas.at(-1), hoje:IMP.iso(now), gerado:now.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}), gerado_ts:now.getTime(), anos:[...new Set(od.map(o=>+o.data.slice(0,4)))].sort(), origem:'importado no app'};
   const extra = {};
+  // o que não é reconstruído pelos arquivos acima continua valendo
+  if(F){ if(F.prospects) extra.prospects = F.prospects; if(F.prioridades) extra.prioridades = F.prioridades; }
+  // VENDAS 2.0: cada arquivo substitui o período de mesmo rótulo
+  const vendasAll = F && Array.isArray(F.vendas) ? [...F.vendas] : [];
+  for(const v of vendasNovas){ const i = vendasAll.findIndex(x=>x.rotulo===v.rotulo); if(i>=0) vendasAll[i]=v; else vendasAll.push(v); }
+  if(vendasAll.length) extra.vendas = vendasAll;
+  // operadores entram no cadastro da equipe antes de publicá-lo
+  if(opsNovos.length && typeof mesclaEquipeRemota==='function'){ if(mesclaEquipeRemota(opsNovos)) salvaVendedores(); }
   if(window.__equipePub) extra.equipe = window.__equipePub();
   if(window.__cadastroPub) extra.cadastroSocios = window.__cadastroPub();
-  return {data:{meta, orders:od, promos:[...pm.values()], stock:stockAll, sections:secAll, ...extra}, log};
+  return {data:{meta, orders:od, promos:[...pm.values()], stock:stockAll, sections:secAll, ...extra}, itens};
 }
 // nome completo do clube a partir do texto "4941 - SAMS CLUB RECIFE" dos pedidos
 const _pn=parsePedidosNested, _pf=parsePedidosFlat;
@@ -2922,71 +3052,200 @@ async function publishToGitHub(blob, token, arquivo){
   if(!r.ok){ const t=await r.text(); throw new Error('GitHub recusou a publicação ('+r.status+'): '+t.slice(0,200)); }
 }
 
-/* ---- tela ---- */
+/* ---- tela de importação ---- */
+let ARQ = [], IMPORTADO = null, IMP_BUSY = false;
+
 function openImport(){
-  $('#dhead').innerHTML=`<h2>Importar arquivos da plataforma</h2><div class="small muted">Pedidos, Promoções e Estoque (.xlsx) · de quantos clubes e meses quiser · os arquivos são lidos apenas no seu navegador</div>`;
-  $('#dbody').innerHTML=`
-    <div id="dz" style="border:2px dashed var(--border-2);border-radius:12px;padding:28px;text-align:center;cursor:pointer;background:var(--surface-2)">
-      <div style="font-size:28px">⬆</div><b>Arraste os arquivos aqui</b> ou clique para escolher<div class="small muted" style="margin-top:6px">Pedidos-… · Novo-Pedidos-… · Promocoes-… · Relatorio-Estoque-…<br><b>Contatos-…</b> (planilha com nome/nº do sócio, telefone, endereço e atividade)</div>
-      <input type="file" id="fileIn" multiple accept=".xlsx" style="display:none"></div>
-    <div class="filters" style="margin-top:12px"><label class="chk"><input type="radio" name="modo" value="add" checked> Adicionar aos dados atuais (recomendado)</label><label class="chk"><input type="radio" name="modo" value="replace"> Substituir tudo</label></div>
-    <div id="impLog" class="script" style="display:none;max-height:180px;overflow:auto"></div>
+  $('#dhead').innerHTML = `<h2>Importar arquivos da plataforma</h2><div class="small muted">Solte <b>todos os arquivos de uma vez</b> — de quantos clubes e meses quiser. Nada sai do seu navegador até você publicar.</div>`;
+  $('#dbody').innerHTML = `
+    <div id="dz" tabindex="0" role="button" style="border:2px dashed var(--border-2);border-radius:12px;padding:26px;text-align:center;cursor:pointer;background:var(--surface-2)">
+      <div style="font-size:26px">⬆</div><b>Arraste os arquivos aqui</b> ou clique para escolher
+      <div class="small muted" style="margin-top:6px">Pode selecionar vários de uma vez · .xlsx, .xls ou .csv</div>
+      <input type="file" id="fileIn" multiple accept=".xlsx,.xls,.csv" style="display:none"></div>
+
+    <details style="margin-top:10px"><summary class="small">Quais arquivos o app reconhece</summary>
+      <div class="small muted" style="margin-top:8px;line-height:1.7">
+        ${Object.entries(TIPOS).map(([k,t])=>`<b>${t.rot}</b> — nome contendo <code>${esc(t.dica)}</code>`).join('<br>')}
+        <br><br>Se o nome for diferente, o arquivo aparece na lista com aviso e você <b>escolhe o tipo na lista ao lado</b> — não precisa renomear nada.
+      </div></details>
+
+    <div class="imp-bar" id="impProg" style="display:none"><i></i></div>
+    <div id="impEstado" class="small muted" style="margin-top:6px;min-height:16px"></div>
+    <div id="impLista"></div>
+    <div id="impAlerta"></div>
+
+    <div class="filters" style="margin-top:14px"><label class="chk"><input type="radio" name="modo" value="add" checked> Adicionar aos dados atuais (recomendado)</label><label class="chk"><input type="radio" name="modo" value="replace"> Substituir tudo</label></div>
+
     <div id="impSum" style="margin-top:12px"></div>
-    <div id="impActions" style="display:none;margin-top:14px;display:none;gap:8px;flex-wrap:wrap">
-      <button class="btn primary" id="btnLocal">Usar neste dispositivo (minha loja)</button>
-      <button class="btn" id="btnPub">Publicar para todos (líder)</button>
+    <div id="impActions" style="display:none;margin-top:14px;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" id="btnPub">✓ Publicar para toda a equipe</button>
+      <button class="btn" id="btnLocal">Usar só neste dispositivo</button>
       <button class="btn" id="btnDown">Baixar data.enc</button>
     </div>
     <div id="impMsg" class="small" style="margin-top:10px;min-height:18px"></div>
-    <p class="small muted" style="margin-top:8px">Ao publicar, vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções definidas em <b>Equipe › Privacidade e LGPD</b>.</p>
+    <p class="small muted" style="margin-top:8px">Ao publicar vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções de <b>Equipe › Privacidade e LGPD</b>. Quem estiver com o app aberto recebe o aviso para atualizar em até 1 minuto.</p>
     <hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
-    <details><summary>Como funciona "Publicar para a equipe"</summary><div class="small muted" style="margin-top:8px;line-height:1.6">
-      O app criptografa os dados com a senha de acesso e envia o arquivo <code>data.enc</code> para o repositório <b>${REPO.owner}/${REPO.repo}</b> no GitHub, que hospeda este app. Em 1–2 minutos todos que abrirem o app verão os dados novos.<br>
-      Na primeira vez ele pede um <b>token</b> do GitHub (fica salvo só neste navegador). Para criar: GitHub → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token → Repository access: <i>Only select repositories</i> → <b>${REPO.repo}</b> → Permissions → Repository permissions → <b>Contents: Read and write</b> → Generate. Copie o token (começa com <code>github_pat_</code>).
+    <details><summary>Como funciona "Publicar para toda a equipe"</summary><div class="small muted" style="margin-top:8px;line-height:1.6">
+      O app criptografa os dados com a senha de acesso e envia o arquivo <code>data.enc</code> para o repositório <b>${REPO.owner}/${REPO.repo}</b>, que hospeda este app. Em 1–2 minutos todos que abrirem o link verão os dados novos, e quem já estiver com o app aberto recebe o aviso <i>"Dados novos publicados"</i>.<br>
+      Na primeira vez ele pede um <b>token</b> do GitHub (fica salvo só neste navegador): GitHub → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token → Repository access: <i>Only select repositories</i> → <b>${REPO.repo}</b> → Permissions → <b>Contents: Read and write</b> → Generate.
       <div style="margin-top:8px"><button class="btn sm" id="btnTok">Trocar / remover token salvo</button> ${(()=>{try{return localStorage.getItem('tv_gh')?'<span class="tag promo">token salvo</span>':'<span class="tag warn">sem token</span>';}catch(e){return ''}})()}</div>
     </div></details>
     ${window.LOCAL_DATA?`<div class="note" style="margin-top:14px"><b>Este dispositivo está usando dados importados aqui</b> (${window.LOCAL_DATA.meta.gerado}). Outras pessoas ainda não veem esses dados pelo link.<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary sm" id="btnPubLocal">Publicar estes dados para todos</button><button class="btn sm" id="btnDiscard">Voltar aos dados publicados</button></div><div id="pubLocalMsg" class="small" style="margin-top:6px"></div></div>`:''}`;
-  const dz=$('#dz'), fi=$('#fileIn'); dz.onclick=()=>fi.click();
-  dz.ondragover=e=>{e.preventDefault(); dz.style.borderColor='var(--accent)';}; dz.ondragleave=()=>dz.style.borderColor='var(--border-2)';
-  dz.ondrop=e=>{e.preventDefault(); dz.style.borderColor='var(--border-2)'; handleFiles([...e.dataTransfer.files]);}; fi.onchange=()=>handleFiles([...fi.files]);
-  $('#btnTok').onclick=()=>{ const t=prompt('Cole o token do GitHub (deixe vazio para remover):'); try{ if(t) localStorage.setItem('tv_gh',t.trim()); else localStorage.removeItem('tv_gh'); }catch(e){} openImport(); };
+
+  const dz=$('#dz'), fi=$('#fileIn');
+  dz.onclick=()=>fi.click();
+  dz.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); fi.click(); } };
+  dz.ondragover=e=>{e.preventDefault(); dz.style.borderColor='var(--accent)'; dz.style.background='var(--info-bg)';};
+  dz.ondragleave=()=>{dz.style.borderColor='var(--border-2)'; dz.style.background='var(--surface-2)';};
+  dz.ondrop=e=>{e.preventDefault(); dz.ondragleave(); addArquivos([...e.dataTransfer.files]);};
+  fi.onchange=()=>{ addArquivos([...fi.files]); fi.value=''; };
+  document.querySelectorAll('input[name=modo]').forEach(r=>r.onchange=()=>processaImport());
+
+  $('#btnTok').onclick=()=>{ const t=prompt('Cole o token do GitHub (deixe vazio para remover):'); try{ if(t) localStorage.setItem('tv_gh',t.trim()); else localStorage.removeItem('tv_gh'); }catch(e){} const guardados=ARQ; openImport(); ARQ=guardados; renderImpLista(); processaImport(); };
   const bd=$('#btnDiscard'); if(bd) bd.onclick=async()=>{ await idbDel('local'); location.reload(); };
-  const bp=$('#btnPubLocal'); if(bp) bp.onclick=async()=>{ const msg=$('#pubLocalMsg'); let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
-    if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" abaixo):'); if(!tok) return; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
+  const bp=$('#btnPubLocal'); if(bp) bp.onclick=async()=>{ const msg=$('#pubLocalMsg');
+    const tok=await pedeToken(); if(!tok) return;
     bp.disabled=true; msg.textContent='Criptografando e publicando…';
-    try{ const blob=await encryptJson(window.LOCAL_DATA,PW_CUR); await publishToGitHub(blob,tok,'data.enc');
-      let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
-      if(!pwV){ pwV=prompt('Senha da EQUIPE para uso no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
-      if(pwV){ const bv=await encryptJson(pacoteEquipe(window.LOCAL_DATA), pwV); await publishToGitHub(bv,tok,'data-equipe.enc'); }
+    try{ await publicaTudo(window.LOCAL_DATA, tok, t=>msg.textContent=t);
       msg.innerHTML='<b style="color:var(--good)">Publicado!</b> Quem abrir o link verá estes dados em 1–2 minutos.'; }
     catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; bp.disabled=false; } };
+
+  ARQ = []; IMPORTADO = null;
   $('#drawer').classList.add('open'); $('#overlay').classList.add('show');
 }
-let IMPORTED=null;
-async function handleFiles(files){
-  const msg=$('#impMsg'), lg=$('#impLog'); lg.style.display='block'; lg.textContent='Lendo arquivos…'; msg.textContent=''; $('#impActions').style.display='none';
+
+function addArquivos(novos){
+  for(const f of novos){
+    if(ARQ.some(a=>a.file.name===f.name && a.file.size===f.size)) continue;
+    ARQ.push({file:f, tipo:detectaTipo(f.name), auto:true});
+  }
+  renderImpLista(); processaImport();
+}
+
+function renderImpLista(){
+  const box=$('#impLista'); if(!box) return;
+  if(!ARQ.length){ box.innerHTML=''; $('#impAlerta').innerHTML=''; $('#impSum').innerHTML=''; $('#impActions').style.display='none'; return; }
+  box.innerHTML = ARQ.map((a,i)=>{
+    const s=a.st||{}; const cls = s.erro?'err' : s.aviso?'warn' : s.resumo?'ok' : 'wait';
+    const ic  = s.erro?'✕' : s.aviso?'!' : s.resumo?'✓' : (s.lendo?'⟳':'…');
+    const det = s.erro || s.aviso || s.resumo || (s.lendo?'lendo…':'na fila');
+    return `<div class="imp-row ${cls}">
+      <span class="ic">${ic}</span>
+      <div class="nm"><b>${esc(a.file.name)}</b><div class="det">${esc(det)}${(s.aviso&&s.resumo)?` · ${esc(s.resumo)}`:''}</div>
+        <div class="small muted">${tamArq(a.file.size)}</div></div>
+      <select class="btn sm" data-tp="${i}" title="Tipo do arquivo">
+        <option value="">— escolher tipo —</option>
+        ${Object.entries(TIPOS).map(([k,t])=>`<option value="${k}" ${a.tipo===k?'selected':''}>${t.rot}</option>`).join('')}
+      </select>
+      <button class="btn sm" data-rm="${i}" title="Remover da lista">✕</button>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('[data-tp]').forEach(s=>s.onchange=()=>{ const a=ARQ[+s.dataset.tp]; a.tipo=s.value||null; a.auto=false; processaImport(); });
+  box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{ ARQ.splice(+b.dataset.rm,1); renderImpLista(); processaImport(); });
+}
+
+async function processaImport(){
+  if(!$('#impLista')) return;
+  if(IMP_BUSY){ IMP_BUSY='refazer'; return; }
+  const msg=$('#impMsg'), est=$('#impEstado'), bar=$('#impProg');
+  $('#impAlerta').innerHTML=''; $('#impSum').innerHTML=''; $('#impActions').style.display='none'; msg.textContent='';
+  if(!ARQ.length){ est.textContent=''; bar.style.display='none'; renderImpLista(); return; }
+  IMP_BUSY = true;
+  ARQ.forEach(a=>a.st={}); renderImpLista();
+  bar.style.display='block'; bar.firstElementChild.style.width='2%';
   try{
     const modo=document.querySelector('input[name=modo]:checked').value;
-    const {data,log}=await importFiles(files, modo==='add'?window.FULL:null);
-    IMPORTED=data; lg.textContent=log.join('\n');
+    const {data,itens} = await importFiles(ARQ.map(a=>({file:a.file, tipo:a.tipo})), modo==='add'?window.FULL:null,
+      (k,n,nome)=>{ est.textContent=`Lendo ${k+1} de ${n} — ${nome}`; bar.firstElementChild.style.width=((k/n)*100).toFixed(0)+'%';
+                    ARQ.forEach((a,i)=>{ if(i===k) a.st={lendo:true}; else if(i>k) a.st={}; }); renderImpLista(); });
+    ARQ.forEach((a,i)=>a.st=itens[i]||{});
+    IMPORTADO = data;
+    bar.firstElementChild.style.width='100%'; est.textContent=''; setTimeout(()=>{ if(bar) bar.style.display='none'; },400);
+    renderImpLista();
+    mostraAlertas(itens);
     const m=data.meta; const okS=new Set(['FATURADO','FINALIZADO','DISPONIVEL NO PDV']);
     $('#impSum').innerHTML=`<div class="grid kpis">
-      ${kpi('Clubes', m.clubes.length, m.clubes.map(c=>c.cod).join(', '))}${kpi('Anos', m.anos.join(' · '), `${m.pedidos_periodo[0].split('-').reverse().join('/')} a ${m.pedidos_periodo[1].split('-').reverse().join('/')}`)}
-      ${kpi('Pedidos', data.orders.length, `${data.orders.filter(o=>okS.has(o.status)).length} faturados`)}${kpi('Ofertas', data.promos.length,'')}${kpi('SKUs', data.stock.length, 'com estoque, venda ou oferta')}</div>`;
+      ${kpi('Clubes', m.clubes.length, m.clubes.map(c=>c.cod).join(', '))}${kpi('Anos', m.anos.join(' · '), `${fmtD(m.pedidos_periodo[0])} a ${fmtD(m.pedidos_periodo[1])}`)}
+      ${kpi('Pedidos', fmtN(data.orders.length), `${fmtN(data.orders.filter(o=>okS.has(o.status)).length)} faturados`)}${kpi('Ofertas', fmtN(data.promos.length),'')}${kpi('SKUs', fmtN(data.stock.length), 'com estoque, venda ou oferta')}</div>`;
     $('#impActions').style.display='flex';
-    $('#btnLocal').onclick=async()=>{ msg.textContent='Salvando…'; await idbSet('local', await encryptJson(IMPORTED,PW_CUR)); msg.textContent='Salvo. Recarregando…'; location.reload(); };
-    $('#btnDown').onclick=async()=>{ const blob=await encryptJson(IMPORTED,PW_CUR); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(blob)],{type:'application/json'})); a.download='data.enc'; a.click(); };
-    $('#btnPub').onclick=async()=>{ let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
-      if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" abaixo):'); if(!tok) return; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
-      $('#btnPub').disabled=true; msg.textContent='Criptografando e publicando…';
-      try{ const blob=await encryptJson(IMPORTED,PW_CUR); await publishToGitHub(blob,tok,'data.enc'); await idbSet('local',blob);
-        let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
-        if(!pwV){ pwV=prompt('Senha da EQUIPE para uso no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
-        if(pwV){ msg.textContent='Publicando o pacote dos vendedores…'; const bv=await encryptJson(pacoteEquipe(IMPORTED), pwV); await publishToGitHub(bv,tok,'data-equipe.enc'); }
-        msg.innerHTML='<b style="color:var(--good)">Publicado!</b> A equipe verá os dados novos em 1–2 minutos.'+(pwV?' Pacote restrito dos vendedores também publicado.':'')+' Recarregando…'; setTimeout(()=>location.reload(),2500); }
-      catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; $('#btnPub').disabled=false; } };
-  }catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; lg.textContent+='\n'+e.message; }
+    ligaAcoesImport();
+  }catch(e){
+    bar.style.display='none'; est.textContent='';
+    if(e.itens) ARQ.forEach((a,i)=>a.st=e.itens[i]||{});
+    renderImpLista(); mostraAlertas(ARQ.map(a=>a.st||{}), e.message);
+    IMPORTADO=null;
+  }
+  const refaz = IMP_BUSY==='refazer'; IMP_BUSY=false; if(refaz) processaImport();
 }
+
+function mostraAlertas(itens, fatal){
+  const erros = itens.filter(i=>i.erro), avisos = itens.filter(i=>!i.erro && i.aviso), ok = itens.filter(i=>i.resumo).length;
+  let html='';
+  if(fatal) html += `<div class="alerta err"><span style="font-size:18px">✕</span><div><b>Não deu para montar a base</b>${esc(fatal)}</div></div>`;
+  if(erros.length) html += `<div class="alerta err"><span style="font-size:18px">!</span><div><b>${erros.length} arquivo(s) não foram lidos</b>
+      ${erros.map(e=>`• <b>${esc(e.nome)}</b> — ${esc(e.erro)}`).join('<br>')}
+      <div style="margin-top:6px;font-weight:400">Os outros arquivos foram processados normalmente. Corrija o tipo ou remova esses — a lista se refaz sozinha.</div></div></div>`;
+  else if(ok && !fatal) html += `<div class="alerta ok"><span style="font-size:18px">✓</span><div><b>${ok} arquivo(s) lidos sem erro</b>${avisos.length?`${avisos.length} com aviso — confira acima.`:'Confira o resumo abaixo e publique.'}</div></div>`;
+  $('#impAlerta').innerHTML = html;
+}
+
+async function pedeToken(){
+  let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
+  if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" no fim da tela):'); if(!tok) return null; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
+  return tok;
+}
+async function publicaTudo(dados, tok, diz){
+  diz('Criptografando…');
+  const blob=await encryptJson(dados,PW_CUR);
+  diz('Enviando o pacote da gerência…');
+  await publishToGitHub(blob,tok,'data.enc');
+  await idbSet('local',blob);
+  let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
+  if(!pwV){ pwV=prompt('Senha da EQUIPE para uso no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
+  if(pwV){ diz('Enviando o pacote dos vendedores…'); const bv=await encryptJson(pacoteEquipe(dados), pwV); await publishToGitHub(bv,tok,'data-equipe.enc'); }
+  return !!pwV;
+}
+function ligaAcoesImport(){
+  const msg=$('#impMsg');
+  $('#btnLocal').onclick=async()=>{ msg.textContent='Salvando…'; await idbSet('local', await encryptJson(IMPORTADO,PW_CUR)); msg.textContent='Salvo. Recarregando…'; location.reload(); };
+  $('#btnDown').onclick=async()=>{ const blob=await encryptJson(IMPORTADO,PW_CUR); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(blob)],{type:'application/json'})); a.download='data.enc'; a.click(); };
+  $('#btnPub').onclick=async()=>{
+    const tok=await pedeToken(); if(!tok) return;
+    $('#btnPub').disabled=true;
+    try{ const comEquipe = await publicaTudo(IMPORTADO, tok, t=>msg.textContent=t);
+      msg.innerHTML='<b style="color:var(--good)">Publicado!</b> A equipe vê os dados novos em até 2 minutos — quem estiver com o app aberto recebe o aviso na tela.'+(comEquipe?' Pacote dos vendedores também publicado.':'')+' Recarregando…';
+      setTimeout(()=>location.reload(),2500); }
+    catch(e){ msg.innerHTML='<div class="alerta err" style="margin-top:4px"><span>✕</span><div><b>Não foi possível publicar</b>'+esc(e.message)+'</div></div>'; $('#btnPub').disabled=false; } };
+}
+
+/* ---- aviso de dados novos (atualização em tempo real) ---- */
+const CANAL = (()=>{ try{ return new BroadcastChannel('tv-dados'); }catch(e){ return null; } })();
+let _impr = null, _avisado = false;
+async function impressaoPub(){
+  try{ const r=await fetch('data.enc',{cache:'no-store'}); if(!r.ok) return null; const t=await r.text(); return t.length+':'+t.slice(-64); }catch(e){ return null; }
+}
+function avisaNovos(){
+  if(_avisado) return; _avisado = true;
+  const el=$('#novoAviso'); if(!el) return;
+  $('#novoQuando').textContent = 'agora há pouco';
+  el.classList.add('show');
+  $('#novoBt').onclick = ()=>location.reload();
+  $('#novoX').onclick  = ()=>{ el.classList.remove('show'); };
+}
+async function vigiaPublicacao(){
+  _impr = await impressaoPub();
+  if(CANAL) CANAL.onmessage = e => { if(e.data==='novo') avisaNovos(); };
+  const checa = async ()=>{
+    if(document.hidden) return;
+    const f = await impressaoPub();
+    if(!f) return;
+    if(_impr && f !== _impr){ _impr = f; avisaNovos(); if(CANAL) CANAL.postMessage('novo'); }
+    else if(!_impr) _impr = f;
+  };
+  setInterval(checa, 60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checa(); });
+}
+vigiaPublicacao();
 
 $('#impBtn').onclick=openImport;
 document.addEventListener('click',e=>{ if(e.target&&e.target.id==='btnExpAcoes') exportaAcoes(); });
