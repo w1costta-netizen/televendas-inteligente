@@ -416,8 +416,12 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </details>
 
   <div class="card so-gerente" style="margin-top:14px">
-    <h3>Histórico de tentativas registradas <button class="btn sm" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button></h3>
-    <p class="small muted" style="margin:0 0 10px">Tudo o que a equipe registrou: quem ligou, se conseguiu falar, o motivo e se o sócio comprou depois.</p>
+    <h3>Histórico de tentativas registradas
+      <button class="btn sm so-admin" id="btnExpAcoes" style="margin-left:8px">Exportar contatos (CSV)</button>
+      <button class="btn sm so-admin" id="btnExpBase" title="Pacote completo para migrar a base para outro servidor">Baixar base completa</button>
+      <button class="btn sm" id="btnSync" title="Buscar na base da empresa o que os outros registraram">↻ Atualizar da base</button></h3>
+    <p class="small muted" style="margin:0 0 6px">Tudo o que a equipe registrou: quem ligou, se conseguiu falar, o motivo e se o sócio comprou depois. Os registros são da empresa e ficam guardados na base central.</p>
+    <div id="syncEst" class="small muted" style="margin:0 0 10px"></div>
     <div class="tbl-wrap" style="max-height:340px"><table id="tAcoes"></table></div>
   </div>
 
@@ -1141,7 +1145,102 @@ let ACOES = window.__acoes || [];
 let __FILA_INIT = window.__fila || {}, __CAD_INIT = window.__cadastro || {}, __VEND_INIT = window.__vendedores || [], __PRIV_INIT = window.__priv || null;
 const vendedorNome = () => { try{ return localStorage.getItem('tv_vend')||''; }catch(e){ return ''; } };
 async function saveAcoes(){ window.__acoes = ACOES; await idbSet('acoes', ACOES); }
-async function registraAcao(a){ ACOES.push(a); await saveAcoes(); }
+async function registraAcao(a){ ACOES.push(a); await saveAcoes(); agendaSync(); }
+
+/* ---------------- base central de registros de contato ----------------
+   Cada pessoa grava os próprios registros, já criptografados aqui no navegador,
+   num arquivo só dela. O administrador lê todos e consolida. A base é da empresa:
+   exportar, imprimir ou migrar para outro servidor é exclusivo do administrador. */
+const slugVend = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+let SYNC = {estado:'', quando:null, vendedores:0, remotos:0};
+let _syncT = null;
+
+/* a base é cifrada sempre com a senha da equipe: o vendedor a usa para entrar,
+   e o administrador a tem guardada desde a primeira publicação */
+function senhaRegistros(){
+  if(!PODE_MOVEL) return PW_CUR;
+  try{ return localStorage.getItem('tv_pw_vend') || null; }catch(e){ return null; }
+}
+function agendaSync(){ clearTimeout(_syncT); _syncT = setTimeout(()=>{ sincronizaRegistros().catch(()=>{}); }, 3000); }
+
+async function sincronizaRegistros(){
+  const pw = senhaRegistros(), meu = vendedorNome();
+  if(!pw || !meu){ if(PODE_MOVEL && !pw){ SYNC.estado='defina a senha da equipe para consolidar a base'; mostraSync(); } return false; }
+  const meus = ACOES.filter(a=>a.vendedor===meu);
+  if(!meus.length) return false;
+  const pacote = await encryptJson({vendedor:meu, atualizado:new Date().toISOString(), acoes:meus}, pw);
+  const corpo = enc.encode(JSON.stringify(pacote));
+  const r = await fetch('/api/registros', {method:'POST', headers:{'content-type':'application/octet-stream','x-senha':PW_CUR,'x-vendedor':meu}, body:corpo});
+  if(!r.ok){ let j=null; try{ j=await r.json(); }catch(e){}
+    SYNC.estado = r.status===401
+      ? 'guardado neste aparelho — aguardando a próxima publicação do gestor'
+      : 'não enviado: ' + ((j&&j.erro)||r.status);
+    mostraSync(); return false; }
+  SYNC.estado='enviado'; SYNC.quando=new Date(); mostraSync(); return true;
+}
+
+const chaveAcao = a => a.id || `${a.vendedor}|${a.quando}|${a.ckey}`;
+function juntaAcoes(lista){
+  const tenho = new Set(ACOES.map(chaveAcao));
+  let novos = 0;
+  for(const a of lista) if(a && a.quando && !tenho.has(chaveAcao(a))){ ACOES.push(a); tenho.add(chaveAcao(a)); novos++; }
+  return novos;
+}
+
+async function puxaRegistros(){
+  const pw = senhaRegistros();
+  if(!pw){ if(PODE_MOVEL){ SYNC.estado='defina a senha da equipe para consolidar a base'; mostraSync(); } return 0; }
+  let novos = 0, vendedores = 0, remotos = 0;
+  try{
+    if(PODE_MOVEL){
+      const r = await fetch('/api/registros', {headers:{'x-senha':PW_CUR}});
+      if(!r.ok) throw new Error('lista');
+      const {arquivos} = await r.json();
+      for(const f of (arquivos||[])){
+        try{
+          const d = await fetch(f.url, {cache:'no-store'}); if(!d.ok) continue;
+          const pacote = await decryptBlob(await d.json(), pw);
+          vendedores++; remotos += (pacote.acoes||[]).length;
+          novos += juntaAcoes(pacote.acoes||[]);
+        }catch(e){ /* arquivo de outra senha ou corrompido: ignora */ }
+      }
+    } else {
+      const meu = vendedorNome(); if(!meu) return 0;
+      const d = await fetch(`${BLOB}/registros/${slugVend(meu)}.enc`, {cache:'no-store'});
+      if(d.ok){ const pacote = await decryptBlob(await d.json(), pw); vendedores=1; remotos=(pacote.acoes||[]).length; novos = juntaAcoes(pacote.acoes||[]); }
+    }
+  }catch(e){ SYNC.estado='sem conexão com a base'; mostraSync(); return 0; }
+  SYNC.vendedores = vendedores; SYNC.remotos = remotos; SYNC.quando = new Date();
+  SYNC.estado = novos ? `${novos} registro(s) novos recebidos` : 'em dia';
+  if(novos) await saveAcoes();
+  mostraSync();
+  return novos;
+}
+
+function mostraSync(){
+  const el = $('#syncEst'); if(!el) return;
+  const hora = SYNC.quando ? SYNC.quando.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+  const erro = /erro|sem conexão/.test(SYNC.estado);
+  el.innerHTML = `<span class="dot" style="display:inline-block;width:7px;height:7px;border-radius:99px;background:${erro?'var(--bad)':'var(--good)'};margin-right:6px"></span>`
+    + (PODE_MOVEL
+        ? `Base da empresa · ${fmtN(SYNC.remotos)} registro(s) de ${SYNC.vendedores} pessoa(s) · ${esc(SYNC.estado||'—')} às ${hora}`
+        : `Seus registros estão guardados na base da empresa · ${esc(SYNC.estado||'—')} às ${hora}`);
+}
+
+/* exportação da base inteira — só o administrador, para migrar de servidor */
+function exportaBaseCompleta(){
+  const pacote = {
+    gerado: new Date().toISOString(),
+    origem: location.host,
+    registros: ACOES,
+    cadastroSocios: CADASTRO,
+    equipe: VENDEDORES.map(v=>({...v, foto:undefined})),
+    fila: FILA,
+  };
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(pacote,null,1)],{type:'application/json'}));
+  a.download=`base-televendas-${new Date().toISOString().slice(0,10)}.json`; a.click();
+}
 /* snapshot diário de alertas — constrói a série histórica de "alertas gerados" */
 async function snapshotAlertas(counts){
   const hist = (await idbGet('alertas_hist')) || {};
@@ -1802,7 +1901,9 @@ function baixaEml(para, assunto, html){
 const telLimpo = t => String(t||'').replace(/\D/g,'');
 const telWa = t => { const d=telLimpo(t); return d? (d.length<=11? '55'+d : d) : ''; };
 // helpers usados pela tela de importação, que roda fora deste escopo
-Object.assign(window, {fmtN, fmtR, fmtD, esc, kpi, mesclaEquipeRemota, salvaVendedores, renderPrivacidade});
+Object.assign(window, {fmtN, fmtR, fmtD, esc, kpi, mesclaEquipeRemota, salvaVendedores, renderPrivacidade,
+  __exportaAcoes: exportaAcoes, __exportaBase: exportaBaseCompleta, __puxaRegistros: puxaRegistros, __sincronizaRegistros: sincronizaRegistros,
+  __precisaSenhaEquipe: () => PODE_MOVEL && !senhaRegistros()});
 window.__equipePub = () => equipeParaPublicar();
 window.__cadastroPub = () => cadastroParaPublicar();
 window.__aplicaContatos = async function(lista){
@@ -2672,6 +2773,10 @@ if(window.FULL && window.FULL.cadastroSocios){ for(const [k,v] of Object.entries
 aplicaRetencao();
 renderIntel(); if(HAS_YOY) renderYoy(); renderFila(); renderGeral(); // intel/yoy populam badges
 go('geral');
+window.__renderResultados = () => { try{ renderResultados(); }catch(e){} mostraSync(); };
+mostraSync();
+/* traz o que os outros registraram e manda o que é meu */
+puxaRegistros().then(n=>{ if(n) window.__renderResultados(); return sincronizaRegistros(); }).catch(()=>{});
 }
 /* ---------------------------------- acesso ---------------------------------- */
 /* ---------------------------------- controle de acesso ---------------------------------- */
@@ -2714,6 +2819,8 @@ function aplicaPerfilUI(){
     b.style.display = (!vend || ABAS_VENDEDOR.includes(b.dataset.v)) ? '' : 'none';
   });
   document.querySelectorAll('#impBtn').forEach(b=>b.style.display = vend ? 'none' : '');
+  // exportar e imprimir a base é exclusivo do administrador (senha de gerência)
+  document.querySelectorAll('.so-admin').forEach(b=>b.style.display = PODE_MOVEL ? '' : 'none');
   document.body.classList.toggle('modo-vendedor', vend);
   if(vend){
     const ativa = document.querySelector('nav.tabs button.active');
@@ -3294,6 +3401,17 @@ async function enviaPacote(blob, arquivo, diz){
   if(!r.ok) throw new Error((j && j.erro) || `O servidor recusou a publicação (${r.status}).`);
   return j;
 }
+/* autoriza a equipe a gravar na base de contatos: vai só uma derivação da senha
+   (PBKDF2, 200 mil iterações), nunca a senha em si */
+async function liberaRegistrosEquipe(pwV, diz){
+  try{
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const km = await crypto.subtle.importKey('raw', enc.encode(pwV), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2', salt, iterations:200000, hash:'SHA-256'}, km, 256));
+    diz('Liberando o registro de contatos para a equipe…');
+    await enviaPacote({equipe:{salt:b64e(salt), iter:200000, hash:b64e(bits)}, em:new Date().toISOString()}, 'cfg.json', ()=>{});
+  }catch(e){ console.warn('Não foi possível liberar o registro de contatos:', e && e.message); }
+}
 async function publicaTudo(dados, _ignorado, diz){
   diz('Compactando e criptografando…');
   const blob=await encryptJson(dados,PW_CUR);
@@ -3301,7 +3419,7 @@ async function publicaTudo(dados, _ignorado, diz){
   await idbSet('local',blob);
   let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
   if(!pwV){ pwV=prompt('Senha que a EQUIPE usa no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
-  if(pwV){ const bv=await encryptJson(pacoteEquipe(dados), pwV); await enviaPacote(bv,'data-equipe.enc',diz); }
+  if(pwV){ const bv=await encryptJson(pacoteEquipe(dados), pwV); await enviaPacote(bv,'data-equipe.enc',diz); await liberaRegistrosEquipe(pwV, diz); }
   return !!pwV;
 }
 function ligaAcoesImport(){
@@ -3344,7 +3462,17 @@ async function vigiaPublicacao(){
 vigiaPublicacao();
 
 $('#impBtn').onclick=openImport;
-document.addEventListener('click',e=>{ if(e.target&&e.target.id==='btnExpAcoes') exportaAcoes(); });
+document.addEventListener('click',e=>{ if(!e.target) return;
+  if(e.target.id==='btnExpAcoes') window.__exportaAcoes && window.__exportaAcoes();
+  if(e.target.id==='btnExpBase') window.__exportaBase && window.__exportaBase();
+  if(e.target.id==='btnSync'){ const b=e.target;
+    if(window.__precisaSenhaEquipe && window.__precisaSenhaEquipe()){
+      const s=prompt('Senha que a equipe usa no computador (a mesma do pacote dos vendedores):');
+      if(!s) return; try{ localStorage.setItem('tv_pw_vend', s.trim()); }catch(err){}
+    }
+    b.disabled=true; b.textContent='buscando…';
+    (window.__puxaRegistros? window.__puxaRegistros() : Promise.resolve()).finally(()=>{ b.disabled=false; b.textContent='↻ Atualizar da base'; window.__renderResultados && window.__renderResultados(); }); }
+});
 if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>

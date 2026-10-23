@@ -2,7 +2,7 @@
 // O conteúdo chega cifrado (AES-256-GCM) — este servidor nunca vê os dados em claro.
 // Autorização: a senha de acesso do app, guardada como variável de ambiente.
 
-const ARQUIVOS = ['data.enc', 'data-equipe.enc'];
+const ARQUIVOS = ['data.enc', 'data-equipe.enc', 'cfg.json'];
 const LIMITE = 4 * 1024 * 1024; // o envio da Vercel aceita até ~4,5 MB
 
 module.exports = async (req, res) => {
