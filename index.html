@@ -223,7 +223,12 @@ h3.veixo{font-size:13px;letter-spacing:.3px;color:var(--text);border-bottom:2px 
 #novoAviso.show{display:flex}
 .note{padding:10px 12px;border-radius:8px;background:var(--info-bg);color:var(--info);font-size:12px;margin-bottom:14px}
 .empty{padding:26px;text-align:center;color:var(--text-3)}
-footer{margin-top:30px;color:var(--text-3);font-size:12px;text-align:center}
+footer{margin-top:30px;color:var(--text-3);font-size:12px;text-align:center;padding-bottom:10px}
+footer a{color:var(--text-2);text-decoration:none;border-bottom:1px solid var(--border-2)}
+footer a:hover{color:var(--accent);border-color:var(--accent)}
+.legal{font-size:13px;line-height:1.75;color:var(--text-2)}
+.legal p{margin:0 0 12px} .legal ul{margin:0 0 12px;padding-left:18px} .legal li{margin-bottom:6px}
+.legal b{color:var(--text)}
 details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:600}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:720px){.two{grid-template-columns:1fr}}
 
@@ -243,7 +248,8 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
 <input type="password" id="pw" placeholder="Senha de acesso" autocomplete="current-password" autofocus>
 <label class="rem"><input type="checkbox" id="rem" checked> Lembrar neste dispositivo</label>
 <div class="err" id="err"></div><button class="btn primary" type="submit" id="loginBtn">Entrar</button>
-<div class="foot">Os dados são descriptografados apenas no seu navegador. Para instalar como aplicativo, use "Instalar" / "Adicionar à tela inicial" no menu do navegador.</div></form></div>
+<div class="foot">Os dados são descriptografados apenas no seu navegador. Para instalar como aplicativo, use "Instalar" / "Adicionar à tela inicial" no menu do navegador.<br>
+<a href="#" data-legal="termos">Termos de uso</a> · <a href="#" data-legal="privacidade">Privacidade e LGPD</a></div></form></div>
 <div id="novoAviso"><span><b>Dados novos publicados</b> <span class="small muted" id="novoQuando"></span></span><button class="btn primary sm" id="novoBt">Atualizar agora</button><button class="btn sm" id="novoX" title="Agora não">✕</button></div>
 <header class="top">
   <div class="top-inner">
@@ -333,11 +339,7 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   <div id="cartoesEquipe"></div>
   <details class="card" style="margin-top:8px"><summary style="font-weight:700">Ver como tabela</summary>
     <div class="tbl-wrap" style="max-height:460px;margin-top:10px"><table id="tEquipe"></table></div></details>
-  <div class="card" style="margin-top:14px">
-    <h3>Privacidade e LGPD</h3>
-    <p class="small muted" style="margin:0 0 12px">Este app trata dados pessoais de empregados e de contatos dos sócios. Configure abaixo o que é compartilhado com a equipe e por quanto tempo os registros ficam guardados.</p>
-    <div id="lgpdBox"></div>
-  </div>
+  <p class="small muted" style="margin-top:16px">Tratamento de dados pessoais, prazos e direitos: veja <a href="#" data-legal="privacidade">Privacidade e LGPD</a> no rodapé da página.</p>
 </section>
 
 <!-- ================= PROSPECÇÃO ================= -->
@@ -594,7 +596,14 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
   </div>
 </section>
 
-<footer>Protótipo construído a partir dos relatórios exportados da plataforma (Pedidos, Promoções, Estoque). Todos os cálculos rodam no navegador; nenhum dado sai desta página.</footer>
+<footer>
+  <div>Televendas Inteligente · uso interno · informação confidencial da empresa</div>
+  <div style="margin-top:6px">
+    <a href="#" data-legal="termos">Termos de uso</a> ·
+    <a href="#" data-legal="privacidade">Privacidade e LGPD</a> ·
+    <a href="#" data-legal="sobre">Sobre os dados</a>
+  </div>
+</footer>
 </div>
 
 <div class="overlay" id="overlay"></div>
@@ -1793,7 +1802,7 @@ function baixaEml(para, assunto, html){
 const telLimpo = t => String(t||'').replace(/\D/g,'');
 const telWa = t => { const d=telLimpo(t); return d? (d.length<=11? '55'+d : d) : ''; };
 // helpers usados pela tela de importação, que roda fora deste escopo
-Object.assign(window, {fmtN, fmtR, fmtD, esc, kpi, mesclaEquipeRemota, salvaVendedores});
+Object.assign(window, {fmtN, fmtR, fmtD, esc, kpi, mesclaEquipeRemota, salvaVendedores, renderPrivacidade});
 window.__equipePub = () => equipeParaPublicar();
 window.__cadastroPub = () => cadastroParaPublicar();
 window.__aplicaContatos = async function(lista){
@@ -3077,6 +3086,71 @@ async function idbGet(k){ try{ const d=await idb(); return await new Promise((re
 async function idbSet(k,v){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').put(v,k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível salvar localmente:', e && e.message); } }
 async function idbDel(k){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').delete(k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível apagar localmente:', e && e.message); } }
 
+/* ---- termos de uso e privacidade (rodapé) ---- */
+const LEGAL = {
+  termos: {
+    titulo: 'Termos de uso',
+    sub: 'Condições de acesso ao Televendas Inteligente',
+    corpo: `
+      <p><b>1. Finalidade e titularidade.</b> Esta é uma ferramenta de uso interno da empresa, destinada exclusivamente à operação de televendas. Todas as informações apresentadas — carteira de sócios, preços, margens, desempenho e registros de contato — são <b>propriedade da empresa</b> e têm caráter <b>confidencial</b>.</p>
+      <p><b>2. Acesso pessoal e intransferível.</b> A senha de acesso é individual do perfil a que pertence e não deve ser compartilhada. O uso no <b>celular ou no aplicativo instalado é restrito à gerência geral</b>; os demais perfis acessam pelo computador.</p>
+      <p><b>3. O que não é permitido.</b> Copiar, fotografar, imprimir, exportar ou transmitir estas informações para fora da empresa, para uso pessoal ou para terceiros. A exportação de dados é restrita ao administrador e deve atender a uma finalidade de trabalho registrada.</p>
+      <p><b>4. Responsabilidade do usuário.</b> Cada pessoa responde pelos registros feitos com o seu acesso. As anotações de ligação devem conter apenas <b>fatos comerciais</b> — nada de juízo de valor sobre pessoas, dados de saúde, opinião política ou qualquer informação sensível.</p>
+      <p><b>5. Encerramento.</b> No desligamento ou mudança de função, o acesso é revogado e os dados guardados no aparelho devem ser apagados pela opção <i>Apagar todos os dados deste aparelho</i>.</p>
+      <p><b>6. Disponibilidade.</b> Esta versão é um protótipo em avaliação. Os números servem à gestão comercial e não substituem os relatórios oficiais da companhia para fins contábeis ou fiscais.</p>`
+  },
+  privacidade: {
+    titulo: 'Privacidade e proteção de dados',
+    sub: 'Aviso de tratamento conforme a Lei 13.709/2018 (LGPD)',
+    corpo: `
+      <p><b>Quem é o controlador.</b> A empresa, por meio da operação de Televendas. Dúvidas e pedidos dos titulares devem ser dirigidos ao Encarregado de Dados (DPO) indicado ao final desta página.</p>
+      <p><b>Quais dados são tratados.</b></p>
+      <ul>
+        <li><b>De empregados:</b> nome, usuário da plataforma, cargo, perfil de acesso, contato corporativo, clube, metas e indicadores de desempenho. Matrícula, admissão, telefone pessoal, observações e foto só são tratados quando o administrador habilita — e a <b>foto depende de consentimento</b> de cada pessoa.</li>
+        <li><b>De contatos dos sócios (pessoa jurídica):</b> razão social, número do sócio, nome do responsável, telefone, endereço, atividade do negócio e o histórico de compras e de ligações. Dados de pessoa jurídica não são protegidos pela LGPD, mas o <b>nome e o telefone da pessoa física que atende</b> são — e recebem o mesmo cuidado.</li>
+      </ul>
+      <p><b>Para que são usados.</b> Distribuição da carteira, registro dos contatos comerciais, melhoria de oferta e mix, e medição de resultado da operação. Não há uso para publicidade, perfilamento de consumo pessoal ou qualquer decisão automatizada sobre pessoas.</p>
+      <p><b>Com que base legal.</b> Execução do contrato de trabalho e legítimo interesse do controlador (art. 7º, V e IX). A foto do empregado, por consentimento específico e revogável (art. 7º, I).</p>
+      <p><b>Minimização.</b> O vendedor recebe apenas o necessário para atender. Campos de RH ficam restritos ao aparelho do líder, desligados por padrão.</p>
+      <p><b>Segurança.</b> Todo o pacote é cifrado com AES-256-GCM (PBKDF2, 200 mil iterações) <b>dentro do navegador</b>, antes de sair do dispositivo, e trafega por HTTPS. O serviço que hospeda o arquivo não possui a chave e não consegue ler o conteúdo.</p>
+      <p><b>Por quanto tempo ficam guardados.</b> Os registros de contato têm prazo de descarte configurável (padrão 24 meses), aplicado automaticamente.</p>
+      <p><b>Direitos do titular (art. 18).</b> Confirmação e acesso, correção, portabilidade, eliminação e revogação do consentimento — exercíveis pelos botões desta página ou pelo Encarregado.</p>`
+  },
+  sobre: {
+    titulo: 'Sobre os dados',
+    sub: 'De onde vem cada número desta tela',
+    corpo: `
+      <p>As informações são carregadas a partir dos relatórios exportados da plataforma: <b>Pedidos</b>, <b>Promoções</b>, <b>Estoque</b>, <b>VENDAS 2.0</b> (venda realizada, com margem e LFL), <b>Social-PJ</b> (cadastro) e <b>Operadores</b>.</p>
+      <p><b>Pedido não é venda.</b> As abas de carteira e inteligência trabalham com <i>pedidos</i>; a aba Vendas trabalha com a <i>venda realizada</i> da VENDAS 2.0 — é ela que vale como resultado oficial.</p>
+      <p><b>LFL</b> compara com o mesmo período do ano anterior. Quando não existe base comparável, o app sinaliza em vez de exibir uma variação enganosa.</p>
+      <p><b>Casamento de sócios.</b> O número do sócio mudou de formato entre os relatórios, então a identificação entre anos é feita pelo nome normalizado. Nomes grafados de formas diferentes aparecem como sócios distintos — vale padronizar o cadastro.</p>
+      <p>Todos os cálculos rodam no seu navegador. Nenhum dado é enviado a terceiros.</p>`
+  }
+};
+function abreLegal(secao){
+  const L = LEGAL[secao] || LEGAL.termos;
+  const admin = (typeof PODE_MOVEL !== 'undefined') && PODE_MOVEL;
+  $('#dhead').innerHTML = `<h2>${L.titulo}</h2><div class="small muted">${L.sub}</div>`;
+  $('#dbody').innerHTML = `
+    <div class="legal">${L.corpo}</div>
+    ${secao==='privacidade' ? `
+      <hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
+      ${admin ? `<h3 style="font-size:13px;margin:0 0 4px">Configurações — restrito ao administrador</h3>
+        <p class="small muted" style="margin:0 0 12px">Define o que é compartilhado com a equipe e por quanto tempo os registros ficam guardados.</p>
+        <div id="lgpdBox"></div>`
+      : `<p class="small muted">As configurações de compartilhamento e retenção são definidas pelo administrador. Para exercer seus direitos, procure o Encarregado de Dados.</p>`}
+    ` : ''}
+    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+      ${Object.entries(LEGAL).filter(([k])=>k!==secao).map(([k,v])=>`<button class="btn sm" data-legal="${k}">${v.titulo}</button>`).join('')}
+    </div>`;
+  if(secao==='privacidade' && admin && typeof renderPrivacidade==='function') renderPrivacidade();
+  $('#drawer').classList.add('open'); $('#overlay').classList.add('show');
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('[data-legal]');
+  if(!a) return; e.preventDefault(); abreLegal(a.dataset.legal);
+});
+
 /* ---- tela de importação ---- */
 let ARQ = [], IMPORTADO = null, IMP_BUSY = false;
 
@@ -3108,7 +3182,7 @@ function openImport(){
       <button class="btn" id="btnDown">Baixar data.enc</button>
     </div>
     <div id="impMsg" class="small" style="margin-top:10px;min-height:18px"></div>
-    <p class="small muted" style="margin-top:8px">Ao publicar vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções de <b>Equipe › Privacidade e LGPD</b>. Quem estiver com o app aberto recebe o aviso para atualizar em até 1 minuto.</p>
+    <p class="small muted" style="margin-top:8px">Ao publicar vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções em <b>Privacidade e LGPD</b> (rodapé). Quem estiver com o app aberto recebe o aviso para atualizar em até 1 minuto.</p>
     <hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
     <details><summary>Como funciona "Publicar para toda a equipe"</summary><div class="small muted" style="margin-top:8px;line-height:1.6">
       O app <b>compacta e criptografa</b> os dados aqui no seu navegador com a senha de acesso e envia o pacote pronto para o armazenamento do próprio app. O servidor guarda o arquivo cifrado — ele nunca vê os dados em claro, e a sua senha é só a autorização para gravar.<br>
