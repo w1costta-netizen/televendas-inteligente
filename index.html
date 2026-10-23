@@ -2730,10 +2730,10 @@ const enc=new TextEncoder(), dec=new TextDecoder();
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
 async function unlock(pw){
   let remote=null, netErr=null, badPw=false;
-  try{ const r=await fetch('data.enc',{cache:'no-store'}); if(!r.ok) throw new Error('Não foi possível carregar os dados publicados ('+r.status+').'); const j=await r.json();
+  try{ const r=await baixaPacote('data.enc'); if(!r.ok) throw new Error('Não foi possível carregar os dados publicados ('+r.status+').'); const j=await r.json();
        try{ remote=await decryptBlob(j,pw); ROLE='gerente'; PODE_MOVEL=true; }catch(e){ badPw=true; } }catch(e){ netErr=e; }
   if(!remote){
-    try{ const r2=await fetch('data-equipe.enc',{cache:'no-store'}).then(r=>r.ok?r:fetch('data-vend.enc',{cache:'no-store'}));
+    try{ const r2=await baixaPacote('data-equipe.enc').then(r=>r.ok?r:fetch('data-vend.enc',{cache:'no-store'}));
          if(r2.ok){ const j2=await r2.json(); try{ remote=await decryptBlob(j2,pw); ROLE='gerente'; PODE_MOVEL=false; badPw=false; }catch(e){} } }catch(e){}
   }
   let local=null; const lb=await idbGet('local'); if(lb){ try{ local=await decryptBlob(lb,pw); }catch(e){} }
@@ -3024,11 +3024,43 @@ parsePedidosNested=function(rows){ return _pn(rows).map(o=>({...o, clube_nome:o.
 parsePedidosFlat=function(rows,raw){ return _pf(rows,raw).map(o=>({...o, clube_nome:o.clube})); };
 
 /* ---- criptografia / armazenamento local / publicação ---- */
+const BLOB = 'https://x9ugs2bsgfxyllgv.public.blob.vercel-storage.com';
+/* o pacote publicado fica no armazenamento da Vercel; o arquivo do repositório é a reserva */
+async function baixaPacote(nome){
+  try{ const r = await fetch(`${BLOB}/${nome}`,{cache:'no-store'}); if(r.ok) return r; }catch(e){}
+  return fetch(nome,{cache:'no-store'});
+}
+async function marcaPacote(nome){
+  for(const url of [`${BLOB}/${nome}`, nome]){
+    try{ const r = await fetch(url,{method:'HEAD',cache:'no-store'});
+         if(r.ok) return (r.headers.get('etag')||'') + '|' + (r.headers.get('last-modified')||'') + '|' + (r.headers.get('content-length')||''); }catch(e){}
+  }
+  return null;
+}
+const temZip = () => typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
+const bytesDe = async stream => new Uint8Array(await new Response(stream).arrayBuffer());
+const zipa   = async u8 => bytesDe(new Blob([u8]).stream().pipeThrough(new CompressionStream('gzip')));
+const deszipa= async u8 => bytesDe(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip')));
+
 const b64e = u8 => { let s=''; for(let i=0;i<u8.length;i+=0x8000) s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(s); };
-async function encryptJson(obj,pw){ const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
-  const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']); const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt']);
-  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(JSON.stringify(obj)))); return {v:2,salt:b64e(salt),iv:b64e(iv),ct:b64e(ct)}; }
-async function decryptBlob(j,pw){ const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']); const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(j.salt),iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['decrypt']); return JSON.parse(dec.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(j.iv)},key,b64(j.ct)))); }
+async function chave(pw, salt, uso){ const km=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:200000,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,[uso]); }
+/* v3 = conteúdo compactado antes de cifrar (≈12× menor); v2 continua sendo lido */
+async function encryptJson(obj,pw){
+  const salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+  const key=await chave(pw,salt,'encrypt');
+  const cru=enc.encode(JSON.stringify(obj));
+  const gz=temZip();
+  const dados = gz ? await zipa(cru) : cru;
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,dados));
+  return {v: gz?3:2, salt:b64e(salt), iv:b64e(iv), ct:b64e(ct)};
+}
+async function decryptBlob(j,pw){
+  const key=await chave(pw,b64(j.salt),'decrypt');
+  let u8=new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64(j.iv)},key,b64(j.ct)));
+  if(j.v===3){ if(!temZip()) throw new Error('Este navegador é antigo demais para abrir o pacote. Use o Chrome ou o Edge atualizado.'); u8=await deszipa(u8); }
+  return JSON.parse(dec.decode(u8));
+}
 let _dbConn=null;
 function idb(){ if(_dbConn) return _dbConn;
   _dbConn = new Promise((res,rej)=>{
@@ -3044,13 +3076,6 @@ function idb(){ if(_dbConn) return _dbConn;
 async function idbGet(k){ try{ const d=await idb(); return await new Promise((res,rej)=>{ const t=d.transaction('kv').objectStore('kv').get(k); t.onsuccess=()=>res(t.result); t.onerror=()=>rej(t.error); }); }catch(e){ return null; } }
 async function idbSet(k,v){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').put(v,k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível salvar localmente:', e && e.message); } }
 async function idbDel(k){ try{ const d=await idb(); await new Promise((res,rej)=>{ const t=d.transaction('kv','readwrite').objectStore('kv').delete(k); t.onsuccess=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('Não foi possível apagar localmente:', e && e.message); } }
-async function publishToGitHub(blob, token, arquivo){
-  const api=`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/contents/${arquivo||'data.enc'}`; const H={Authorization:'Bearer '+token, Accept:'application/vnd.github+json'};
-  let sha=null; const g=await fetch(api,{headers:H}); if(g.status===401||g.status===403) throw new Error('Token inválido ou sem permissão de escrita no repositório.'); if(g.ok) sha=(await g.json()).sha;
-  const content=b64e(enc.encode(JSON.stringify(blob)));
-  const r=await fetch(api,{method:'PUT',headers:{...H,'Content-Type':'application/json'},body:JSON.stringify({message:'Atualização de dados pelo app', content, ...(sha?{sha}:{})})});
-  if(!r.ok){ const t=await r.text(); throw new Error('GitHub recusou a publicação ('+r.status+'): '+t.slice(0,200)); }
-}
 
 /* ---- tela de importação ---- */
 let ARQ = [], IMPORTADO = null, IMP_BUSY = false;
@@ -3086,9 +3111,9 @@ function openImport(){
     <p class="small muted" style="margin-top:8px">Ao publicar vão junto o <b>cadastro da equipe</b> e os <b>contatos dos sócios</b> conforme as opções de <b>Equipe › Privacidade e LGPD</b>. Quem estiver com o app aberto recebe o aviso para atualizar em até 1 minuto.</p>
     <hr style="border:0;border-top:1px solid var(--border);margin:18px 0">
     <details><summary>Como funciona "Publicar para toda a equipe"</summary><div class="small muted" style="margin-top:8px;line-height:1.6">
-      O app criptografa os dados com a senha de acesso e envia o arquivo <code>data.enc</code> para o repositório <b>${REPO.owner}/${REPO.repo}</b>, que hospeda este app. Em 1–2 minutos todos que abrirem o link verão os dados novos, e quem já estiver com o app aberto recebe o aviso <i>"Dados novos publicados"</i>.<br>
-      Na primeira vez ele pede um <b>token</b> do GitHub (fica salvo só neste navegador): GitHub → Settings → Developer settings → Personal access tokens → <b>Fine-grained tokens</b> → Generate new token → Repository access: <i>Only select repositories</i> → <b>${REPO.repo}</b> → Permissions → <b>Contents: Read and write</b> → Generate.
-      <div style="margin-top:8px"><button class="btn sm" id="btnTok">Trocar / remover token salvo</button> ${(()=>{try{return localStorage.getItem('tv_gh')?'<span class="tag promo">token salvo</span>':'<span class="tag warn">sem token</span>';}catch(e){return ''}})()}</div>
+      O app <b>compacta e criptografa</b> os dados aqui no seu navegador com a senha de acesso e envia o pacote pronto para o armazenamento do próprio app. O servidor guarda o arquivo cifrado — ele nunca vê os dados em claro, e a sua senha é só a autorização para gravar.<br>
+      São dois pacotes: o da <b>gerência</b> (sua senha, abre no celular) e o da <b>equipe</b> (senha própria, só abre no computador). A senha da equipe é pedida uma única vez e fica guardada neste navegador.<br>
+      Em menos de um minuto todo mundo vê os dados novos — quem estiver com o app aberto recebe o aviso <i>"Dados novos publicados"</i> na tela.
     </div></details>
     ${window.LOCAL_DATA?`<div class="note" style="margin-top:14px"><b>Este dispositivo está usando dados importados aqui</b> (${window.LOCAL_DATA.meta.gerado}). Outras pessoas ainda não veem esses dados pelo link.<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary sm" id="btnPubLocal">Publicar estes dados para todos</button><button class="btn sm" id="btnDiscard">Voltar aos dados publicados</button></div><div id="pubLocalMsg" class="small" style="margin-top:6px"></div></div>`:''}`;
 
@@ -3101,12 +3126,10 @@ function openImport(){
   fi.onchange=()=>{ addArquivos([...fi.files]); fi.value=''; };
   document.querySelectorAll('input[name=modo]').forEach(r=>r.onchange=()=>processaImport());
 
-  $('#btnTok').onclick=()=>{ const t=prompt('Cole o token do GitHub (deixe vazio para remover):'); try{ if(t) localStorage.setItem('tv_gh',t.trim()); else localStorage.removeItem('tv_gh'); }catch(e){} const guardados=ARQ; openImport(); ARQ=guardados; renderImpLista(); processaImport(); };
   const bd=$('#btnDiscard'); if(bd) bd.onclick=async()=>{ await idbDel('local'); location.reload(); };
   const bp=$('#btnPubLocal'); if(bp) bp.onclick=async()=>{ const msg=$('#pubLocalMsg');
-    const tok=await pedeToken(); if(!tok) return;
     bp.disabled=true; msg.textContent='Criptografando e publicando…';
-    try{ await publicaTudo(window.LOCAL_DATA, tok, t=>msg.textContent=t);
+    try{ await publicaTudo(window.LOCAL_DATA, null, t=>msg.textContent=t);
       msg.innerHTML='<b style="color:var(--good)">Publicado!</b> Quem abrir o link verá estes dados em 1–2 minutos.'; }
     catch(e){ msg.innerHTML='<span style="color:var(--bad)">'+esc(e.message)+'</span>'; bp.disabled=false; } };
 
@@ -3189,20 +3212,22 @@ function mostraAlertas(itens, fatal){
   $('#impAlerta').innerHTML = html;
 }
 
-async function pedeToken(){
-  let tok=null; try{ tok=localStorage.getItem('tv_gh'); }catch(e){}
-  if(!tok){ tok=prompt('Cole o token do GitHub (veja "Como funciona" no fim da tela):'); if(!tok) return null; tok=tok.trim(); try{ localStorage.setItem('tv_gh',tok); }catch(e){} }
-  return tok;
+async function enviaPacote(blob, arquivo, diz){
+  const corpo = enc.encode(JSON.stringify(blob));
+  diz(`Enviando ${arquivo === 'data.enc' ? 'o pacote da gerência' : 'o pacote dos vendedores'} (${(corpo.length/1048576).toFixed(1)} MB)…`);
+  const r = await fetch('/api/publicar', {method:'POST', headers:{'content-type':'application/octet-stream','x-senha':PW_CUR,'x-arquivo':arquivo}, body:corpo});
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok) throw new Error((j && j.erro) || `O servidor recusou a publicação (${r.status}).`);
+  return j;
 }
-async function publicaTudo(dados, tok, diz){
-  diz('Criptografando…');
+async function publicaTudo(dados, _ignorado, diz){
+  diz('Compactando e criptografando…');
   const blob=await encryptJson(dados,PW_CUR);
-  diz('Enviando o pacote da gerência…');
-  await publishToGitHub(blob,tok,'data.enc');
+  await enviaPacote(blob,'data.enc',diz);
   await idbSet('local',blob);
   let pwV=null; try{ pwV=localStorage.getItem('tv_pw_vend'); }catch(e){}
-  if(!pwV){ pwV=prompt('Senha da EQUIPE para uso no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
-  if(pwV){ diz('Enviando o pacote dos vendedores…'); const bv=await encryptJson(pacoteEquipe(dados), pwV); await publishToGitHub(bv,tok,'data-equipe.enc'); }
+  if(!pwV){ pwV=prompt('Senha que a EQUIPE usa no computador (diferente da sua — esta não abre no celular):'); if(pwV){ pwV=pwV.trim(); try{ localStorage.setItem('tv_pw_vend',pwV); }catch(e){} } }
+  if(pwV){ const bv=await encryptJson(pacoteEquipe(dados), pwV); await enviaPacote(bv,'data-equipe.enc',diz); }
   return !!pwV;
 }
 function ligaAcoesImport(){
@@ -3210,9 +3235,8 @@ function ligaAcoesImport(){
   $('#btnLocal').onclick=async()=>{ msg.textContent='Salvando…'; await idbSet('local', await encryptJson(IMPORTADO,PW_CUR)); msg.textContent='Salvo. Recarregando…'; location.reload(); };
   $('#btnDown').onclick=async()=>{ const blob=await encryptJson(IMPORTADO,PW_CUR); const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(blob)],{type:'application/json'})); a.download='data.enc'; a.click(); };
   $('#btnPub').onclick=async()=>{
-    const tok=await pedeToken(); if(!tok) return;
     $('#btnPub').disabled=true;
-    try{ const comEquipe = await publicaTudo(IMPORTADO, tok, t=>msg.textContent=t);
+    try{ const comEquipe = await publicaTudo(IMPORTADO, null, t=>msg.textContent=t);
       msg.innerHTML='<b style="color:var(--good)">Publicado!</b> A equipe vê os dados novos em até 2 minutos — quem estiver com o app aberto recebe o aviso na tela.'+(comEquipe?' Pacote dos vendedores também publicado.':'')+' Recarregando…';
       setTimeout(()=>location.reload(),2500); }
     catch(e){ msg.innerHTML='<div class="alerta err" style="margin-top:4px"><span>✕</span><div><b>Não foi possível publicar</b>'+esc(e.message)+'</div></div>'; $('#btnPub').disabled=false; } };
@@ -3221,9 +3245,7 @@ function ligaAcoesImport(){
 /* ---- aviso de dados novos (atualização em tempo real) ---- */
 const CANAL = (()=>{ try{ return new BroadcastChannel('tv-dados'); }catch(e){ return null; } })();
 let _impr = null, _avisado = false;
-async function impressaoPub(){
-  try{ const r=await fetch('data.enc',{cache:'no-store'}); if(!r.ok) return null; const t=await r.text(); return t.length+':'+t.slice(-64); }catch(e){ return null; }
-}
+const impressaoPub = () => marcaPacote('data.enc');
 function avisaNovos(){
   if(_avisado) return; _avisado = true;
   const el=$('#novoAviso'); if(!el) return;

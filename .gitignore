@@ -2,3 +2,5 @@ _test/
 
 .vercel
 .vercel
+
+.env*
