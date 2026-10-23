@@ -460,6 +460,16 @@ details summary{cursor:pointer;color:var(--accent);font-size:12px;font-weight:60
       <p class="small muted" style="margin:0 0 10px">Ordenado por receita. A etiqueta resume peso × LFL × margem.</p>
       <div class="tbl-wrap" style="max-height:460px"><table id="tCats"></table></div>
     </div>
+    <div class="card" style="margin-top:14px;border:2px solid var(--accent)">
+      <h3>Quem comprou este produto</h3>
+      <p class="small muted" style="margin:0 0 10px">Busque pelo <b>código interno</b>, EAN ou nome e veja os sócios que compraram no período escolhido — com telefone para ligar na hora.</p>
+      <div class="filters">
+        <label style="flex:1 1 280px">Produto<input type="search" id="qcBusca" placeholder="ex.: 127602, 7896036090244 ou OLEO SOJA"></label>
+        <label>Período<select id="qcPeriodo"></select></label>
+      </div>
+      <div id="qcProdutos" style="margin:4px 0 2px"></div>
+      <div id="qcResultado"></div>
+    </div>
     <div class="card" style="margin-top:14px">
       <h3>Onde a receita foi perdida — produtos</h3>
       <p class="small muted" style="margin:0 0 10px">Itens que vendiam no ano anterior e caíram ou pararam. O <b>saldo</b> é quanto deixou de entrar no período.</p>
@@ -2263,7 +2273,7 @@ function renderVendas(){
   const prods=[...(V.produtos||[])].sort((a,b)=>b.receita-a.receita);
   $('#vProdCount').textContent = prods.length? `${prods.length} produtos` : '';
   table($('#tProdVendas'),[
-    {k:'nome',l:'Produto',f:r=>`${esc(r.nome)}<div class="small muted">${esc(r.cod||'')}</div>`},
+    {k:'nome',l:'Produto',f:r=>`<a href="#" data-verquem="${esc(r.cod||r.nome)}">${esc(r.nome)}</a><div class="small muted">${esc(r.cod||'')}</div>`},
     {k:'receita',l:'Receita',num:true,f:r=>r.receita?fmtR(r.receita):'<span class="muted">não vendeu</span>'},
     {k:'lfl_receita',l:'LFL',num:true,f:r=>fmtLFL(r.lfl_receita,r)},
     {k:'saldo_receita',l:'Saldo receita',num:true,f:r=>fmtSaldo(r.saldo_receita),sort:true},
@@ -2271,6 +2281,7 @@ function renderVendas(){
     {k:'socios',l:'Sócios',num:true,f:r=>fmtN(r.socios)},
     {k:'volume',l:'Volume',num:true,f:r=>fmtN(r.volume)},
   ],prods.slice(0,150));
+  $('#tProdVendas').querySelectorAll('[data-verquem]').forEach(a=>a.onclick=e=>{ e.preventDefault(); window.__qcEan=null; $('#qcBusca').value=a.dataset.verquem; renderBuscaItem(); $('#qcBusca').scrollIntoView({block:'center'}); });
 
   const perdas=prods.filter(r=>(r.saldo_receita??0)<0).sort((a,b)=>a.saldo_receita-b.saldo_receita);
   const perdaTotal=perdas.reduce((a,r)=>a+r.saldo_receita,0);
@@ -2284,6 +2295,7 @@ function renderVendas(){
     {k:'volume',l:'Volume',num:true,f:r=>r.volume?fmtN(r.volume):'—'},
   ],perdas,{sort:'saldo_receita',asc:true});
   $('#vAnalise').innerHTML = analiseVendas(V, deps, cats, tot, {perdas, perdaTotal, pararam});
+  renderBuscaItem();
 }
 
 /* leitura automática: o que fazer para melhorar a venda */
@@ -2476,6 +2488,123 @@ function renderProspec(){
   if(rows.length>400) $('#pCount').textContent = `${rows.length} empresas (mostrando as 400 de maior potencial)`;
 }
 
+/* ---------------------------------- quem comprou cada produto ---------------------------------- */
+let COD2EAN = null, EAN2COD = null;
+function mapaCodigos(){
+  if(COD2EAN) return COD2EAN;
+  COD2EAN = {}; EAN2COD = {};
+  for(const s of (D.stock||[])) if(s.cod){ COD2EAN[String(s.cod)] = s.ean; EAN2COD[s.ean] = String(s.cod); }
+  return COD2EAN;
+}
+const codDoEan = e => { mapaCodigos(); return EAN2COD[e] || ''; };
+/* janelas de período para a busca */
+function janelasBusca(){
+  const fim = D.meta.ref_pedidos;
+  const d = n => { const x = pd(fim); x.setDate(x.getDate()-n); return IMPD(x); };
+  const out = [
+    {id:'30',  rot:'Últimos 30 dias',  ini:d(30),  fim},
+    {id:'90',  rot:'Últimos 90 dias',  ini:d(90),  fim},
+    {id:'180', rot:'Últimos 6 meses',  ini:d(180), fim},
+    {id:'365', rot:'Últimos 12 meses', ini:d(365), fim},
+  ];
+  for(const a of [...ANOS].reverse()) out.push({id:'a'+a, rot:`Ano de ${a}`, ini:`${a}-01-01`, fim:`${a}-12-31`});
+  out.push({id:'tudo', rot:'Todo o histórico', ini:'1900-01-01', fim:'2999-12-31'});
+  return out;
+}
+const IMPD = x => `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+
+/* acha produtos que casam com o termo (código, EAN ou nome) */
+function achaProdutos(termo, ini, fim){
+  mapaCodigos();
+  const t = termo.trim().toLowerCase(); if(t.length < 2) return [];
+  const m = new Map();
+  const add = (ean, nome, cod) => { if(!ean) return; if(!m.has(ean)) m.set(ean, {ean, nome, cod: cod || codDoEan(ean)}); };
+  for(const s of (D.stock||[]))
+    if(String(s.cod||'').includes(t) || s.ean.includes(t) || (s.desc||'').toLowerCase().includes(t)) add(s.ean, s.desc, String(s.cod||''));
+  for(const o of D.orders) for(const i of o.itens)
+    if(i.ean.includes(t) || (i.desc||'').toLowerCase().includes(t) || codDoEan(i.ean).includes(t)) add(i.ean, i.desc, codDoEan(i.ean));
+  // ordena pelos que de fato vendem no período, para a primeira sugestão já ser útil
+  const noPer = new Map(), total = new Map();
+  for(const o of D.orders){
+    if(!OK.has(o.status)) continue;
+    const dentro = !ini || (o.data.slice(0,10) >= ini && o.data.slice(0,10) <= fim);
+    for(const i of o.itens){ const v = i.qtd*i.preco;
+      total.set(i.ean, (total.get(i.ean)||0) + v);
+      if(dentro) noPer.set(i.ean, (noPer.get(i.ean)||0) + v); } }
+  const peso = e => (noPer.get(e)||0) * 1e6 + (total.get(e)||0);
+  return [...m.values()].sort((a,b)=>peso(b.ean)-peso(a.ean)).slice(0, 40);
+}
+/* sócios que compraram um EAN no período */
+function compradoresDoItem(ean, ini, fim){
+  const m = new Map();
+  for(const o of D.orders){
+    if(!OK.has(o.status)) continue;
+    const dia = o.data.slice(0,10); if(dia < ini || dia > fim) continue;
+    for(const i of o.itens){
+      if(i.ean !== ean) continue;
+      const r = m.get(o.ckey) || {ckey:o.ckey, nome:o.nome, num:o.cliente, qtd:0, valor:0, pedidos:0, ultima:'', precos:[]};
+      r.qtd += i.qtd; r.valor += i.qtd*i.preco; r.pedidos++;
+      if(o.data > r.ultima) r.ultima = o.data;
+      if(i.preco) r.precos.push(i.preco);
+      m.set(o.ckey, r);
+    }
+  }
+  return [...m.values()].map(r=>({...r, precoMedio: r.precos.length ? r.precos.reduce((a,b)=>a+b,0)/r.precos.length : null}))
+                        .sort((a,b)=>b.valor-a.valor);
+}
+function renderBuscaItem(){
+  const sel = $('#qcPeriodo'), jan = janelasBusca();
+  if(sel.options.length !== jan.length) sel.innerHTML = jan.map(j=>`<option value="${j.id}">${j.rot}</option>`).join('');
+  const j = jan.find(x=>x.id===sel.value) || jan[1];
+  sel.value = j.id;
+  const termo = $('#qcBusca').value;
+  const achados = achaProdutos(termo, j.ini, j.fim);
+  if(termo.trim().length < 2){
+    $('#qcProdutos').innerHTML = '<p class="small muted" style="margin:0">Digite o código interno, o EAN ou parte do nome do produto.</p>';
+    $('#qcResultado').innerHTML = ''; return;
+  }
+  if(!achados.length){
+    $('#qcProdutos').innerHTML = '<p class="small muted" style="margin:0">Nenhum produto encontrado com esse termo.</p>';
+    $('#qcResultado').innerHTML = ''; return;
+  }
+  const sel2 = window.__qcEan && achados.some(p=>p.ean===window.__qcEan) ? window.__qcEan : achados[0].ean;
+  window.__qcEan = sel2;
+  $('#qcProdutos').innerHTML = achados.map(p=>`<button class="btn sm ${p.ean===sel2?'primary':''}" data-qcp="${esc(p.ean)}" style="margin:0 4px 4px 0">${esc(p.nome)}<span class="muted" style="font-weight:400"> · ${esc(p.cod||p.ean)}</span></button>`).join('');
+  $('#qcProdutos').querySelectorAll('[data-qcp]').forEach(b=>b.onclick=()=>{ window.__qcEan = b.dataset.qcp; renderBuscaItem(); });
+
+  const prod = achados.find(p=>p.ean===sel2);
+  const linhas = compradoresDoItem(sel2, j.ini, j.fim);
+  const st = stockByEan.get(sel2), pv = vigPromo(sel2);
+  const totQ = sum(linhas,r=>r.qtd), totV = sum(linhas,r=>r.valor);
+  const hist = linhas.length ? [] : compradoresDoItem(sel2, '1900-01-01', '2999-12-31');
+  $('#qcResultado').innerHTML = `
+    <div class="note" style="margin:12px 0">
+      <b>${esc(prod.nome)}</b> · código ${esc(prod.cod||'—')} · EAN ${esc(prod.ean)}
+      ${st?` · estoque <b>${fmtN(st.estoque)}</b> · tabela ${fmtR2(st.preco)}`:''}
+      ${pv?` · <span class="tag promo">em oferta ${fmtR2(bestTier(pv))} até ${fmtD(pv.fim)}</span>`:''}
+    </div>
+    ${linhas.length
+      ? `<p class="small muted" style="margin:0 0 8px"><b>${linhas.length}</b> sócio(s) compraram ${fmtN(totQ)} unidades (${fmtR(totV)}) em ${esc(j.rot.toLowerCase())}.</p>`
+      : `<p class="small" style="margin:0 0 8px"><b>Nenhum sócio comprou este item em ${esc(j.rot.toLowerCase())}.</b>${
+          hist.length ? ` No histórico completo foram <b>${hist.length}</b> sócio(s) e ${fmtR(sum(hist,r=>r.valor))} — <a href="#" data-qctudo="1">ver todo o histórico</a>.`
+                      : ' Este produto nunca foi vendido pelo televendas.'}</p>`}
+    <div class="tbl-wrap" style="max-height:420px"><table id="tQuemComprou"></table></div>`;
+  table($('#tQuemComprou'),[
+    {k:'nome',l:'Sócio',f:r=>{const c=CLI.find(x=>x.id===r.ckey); return `<b>${esc(r.nome)}</b><div class="small muted">nº ${esc(r.num)}${c?` · ${c.diasSem} dias sem comprar`:''}${CADASTRO[r.ckey]?.segmento?` · ${esc(CADASTRO[r.ckey].segmento)}`:''}</div>`;}},
+    {k:'qtd',l:'Qtd',num:true,f:r=>fmtN(r.qtd)},
+    {k:'valor',l:'Valor',num:true,f:r=>fmtR(r.valor),sort:true},
+    {k:'pedidos',l:'Pedidos',num:true},
+    {k:'precoMedio',l:'Preço médio',num:true,f:r=>r.precoMedio?fmtR2(r.precoMedio):'—'},
+    {k:'ultima',l:'Última vez',num:true,f:r=>fmtD(r.ultima.slice(0,10))},
+    {k:'tel',l:'Telefone',v:r=>(CADASTRO[r.ckey]?.telefone?1:0),f:r=>{const t=CADASTRO[r.ckey]?.telefone;
+      return t?`<div class="telnum">${esc(t)}</div><div class="telacoes"><a class="btn sm" href="tel:${telLimpo(t)}">☎</a><a class="btn sm" href="https://wa.me/${telWa(t)}" target="_blank" rel="noopener">zap</a></div>`:'<span class="muted small">sem telefone</span>';}},
+    {k:'acao',l:'',f:r=>CLI.some(x=>x.id===r.ckey)?`<button class="btn sm" data-qctent="${esc(r.ckey)}">☎ Registrar</button>`:''},
+  ],linhas);
+  const vt = $('#qcResultado').querySelector('[data-qctudo]');
+  if(vt) vt.onclick = e => { e.preventDefault(); $('#qcPeriodo').value = 'tudo'; renderBuscaItem(); };
+  $('#tQuemComprou').querySelectorAll('[data-qctent]').forEach(b=>b.onclick=()=>{ const c=CLI.find(x=>x.id===b.dataset.qctent); if(c) openTentativa(c); });
+}
+
 /* ---------------------------------- navegação ---------------------------------- */
 function go(v){ document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active',b.dataset.v===v)); document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active',s.id==='v-'+v)); ({carteira:renderCarteira,ofertas:renderOfertas,estoque:renderEstoque,intel:renderIntel,geral:renderGeral,yoy:renderYoy,result:renderResultados,tarefas:renderFila,equipe:renderEquipe,vendas:renderVendas,prospec:renderProspec})[v](); window.scrollTo({top:0}); }
 $('#tabs').onclick=e=>{const b=e.target.closest('button'); if(b) go(b.dataset.v);};
@@ -2485,6 +2614,7 @@ $('#cRef').value=D.meta.ref_pedidos; $('#cRef').addEventListener('change',()=>{ 
 ['#oSearch','#oSecao','#oVig','#oEstq','#oComp','#oNeg'].forEach(s=>$(s).addEventListener('input',renderOfertas));
 ['#ySit','#ySearch'].forEach(s=>$(s).addEventListener('input',renderYoyCli)); $('#yiSit').addEventListener('input',renderYoyIt);
 $('#vPeriodo').addEventListener('change',renderVendas);
+['#qcBusca','#qcPeriodo'].forEach(s=>['input','change'].forEach(ev=>$(s).addEventListener(ev,()=>{ if(s==='#qcBusca') window.__qcEan=null; renderBuscaItem(); })));
 ['#pBusca','#pSeg','#pSit'].forEach(s=>$(s).addEventListener('input',renderProspec));
 $('#vAdd').onclick=async()=>{ const n=$('#vNome').value.trim(); if(!n) return; VENDEDORES.push({nome:n, email:$('#vEmail').value.trim()}); await salvaVendedores(); $('#vNome').value=''; $('#vEmail').value=''; renderFila(); };
 $('#fGerar').onclick=()=>gerarFila($('#fCrit').value, +$('#fQtd').value||5);
